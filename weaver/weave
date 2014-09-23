@@ -1,8 +1,6 @@
 #!/bin/sh
 set -e
 
-# The identity of this file is: $Id$  ok?
-
 usage() {
     echo "Usage:"
     echo "weave launch <ipaddr>/<subnet> [-passwd <passwd>] <peer_host> ..."
