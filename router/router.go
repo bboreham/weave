@@ -1,4 +1,4 @@
-package weave
+package router
 
 import (
 	"bytes"
@@ -186,24 +186,29 @@ func (router *Router) udpReader(conn *net.UDPConn, po PacketSink) {
 			log.Println("ignoring UDP read error", err)
 			continue
 		} else if n < NameSize {
-			continue // TODO something different?
+			log.Println("ignoring too short UDP packet from", sender)
+			continue
+		}
+		name := PeerNameFromBin(buf[:NameSize])
+		packet := make([]byte, n-NameSize)
+		copy(packet, buf[NameSize:n])
+		udpPacket := &UDPPacket{
+			Name:   name,
+			Packet: packet,
+			Sender: sender}
+		peerConn, found := router.Ourself.ConnectionTo(name)
+		if !found {
+			continue
+		}
+		relayConn, ok := peerConn.(*LocalConnection)
+		if !ok {
+			continue
+		}
+		err = relayConn.Decryptor.IterateFrames(handleUDPPacket, udpPacket)
+		if pde, ok := err.(PacketDecodingError); ok {
+			relayConn.log(pde.Error())
 		} else {
-			name := PeerNameFromBin(buf[:NameSize])
-			packet := make([]byte, n-NameSize)
-			copy(packet, buf[NameSize:n])
-			udpPacket := &UDPPacket{
-				Name:   name,
-				Packet: packet,
-				Sender: sender}
-			peerConn, found := router.Ourself.ConnectionTo(name)
-			if !found {
-				continue
-			}
-			relayConn, ok := peerConn.(*LocalConnection)
-			if !ok {
-				continue
-			}
-			checkWarn(relayConn.Decryptor.IterateFrames(handleUDPPacket, udpPacket))
+			checkWarn(err)
 		}
 	}
 }
