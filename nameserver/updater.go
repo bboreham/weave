@@ -2,6 +2,7 @@ package nameserver
 
 import (
 	"github.com/fsouza/go-dockerclient"
+	. "github.com/zettio/weave/logging"
 )
 
 func checkError(err error, apiPath string) {

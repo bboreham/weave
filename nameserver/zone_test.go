@@ -1,6 +1,7 @@
 package nameserver
 
 import (
+	wt "github.com/zettio/weave/testing"
 	"net"
 	"testing"
 )
@@ -18,17 +19,17 @@ func TestZone(t *testing.T) {
 	ip := net.ParseIP(dockerIP)
 	weaveIP, _, _ := net.ParseCIDR(testAddr1)
 	err := zone.AddRecord(containerID, successTestName, ip, weaveIP)
-	assertNoErr(t, err)
+	wt.AssertNoErr(t, err)
 
 	// Add a few more records to make the job harder
 	err = zone.AddRecord("abcdef0123", "adummy.weave.", net.ParseIP("1.1.1.1"), net.ParseIP("10.0.0.1"))
-	assertNoErr(t, err)
+	wt.AssertNoErr(t, err)
 	err = zone.AddRecord("0123abcdef", "zdummy.weave.", net.ParseIP("2.2.2.2"), net.ParseIP("10.0.0.2"))
-	assertNoErr(t, err)
+	wt.AssertNoErr(t, err)
 
 	// Check that the address is now there.
 	foundIP, err := zone.MatchLocal(successTestName)
-	assertNoErr(t, err)
+	wt.AssertNoErr(t, err)
 
 	if !foundIP.Equal(weaveIP) {
 		t.Fatal("Unexpected result for", successTestName, foundIP)
@@ -36,7 +37,7 @@ func TestZone(t *testing.T) {
 
 	// See if we can find the address by IP.
 	foundName, err := zone.MatchLocalIP(weaveIP)
-	assertNoErr(t, err)
+	wt.AssertNoErr(t, err)
 
 	if foundName != successTestName {
 		t.Fatal("Unexpected result for", weaveIP, foundName)
@@ -44,19 +45,19 @@ func TestZone(t *testing.T) {
 
 	// Now try to add the same address again
 	err = zone.AddRecord(containerID, successTestName, ip, weaveIP)
-	assertErrorType(t, err, (*DuplicateError)(nil), "duplicate add")
+	wt.AssertErrorType(t, err, (*DuplicateError)(nil), "duplicate add")
 
 	// Now delete the record
 	err = zone.DeleteRecord(containerID, weaveIP)
-	assertNoErr(t, err)
+	wt.AssertNoErr(t, err)
 
 	// Check that the address is not there now.
 	_, err = zone.MatchLocal(successTestName)
-	assertErrorType(t, err, (*LookupError)(nil), "after deleting record")
+	wt.AssertErrorType(t, err, (*LookupError)(nil), "after deleting record")
 
 	// Delete a record that isn't there
 	err = zone.DeleteRecord(containerID, net.ParseIP("0.0.0.0"))
-	assertErrorType(t, err, (*LookupError)(nil), "when deleting record that doesn't exist")
+	wt.AssertErrorType(t, err, (*LookupError)(nil), "when deleting record that doesn't exist")
 }
 
 func TestDeleteFor(t *testing.T) {
@@ -72,13 +73,13 @@ func TestDeleteFor(t *testing.T) {
 	for _, addr := range []string{addr1, addr2} {
 		weaveIP, _, _ := net.ParseCIDR(addr)
 		err := zone.AddRecord(id, name, ip, weaveIP)
-		assertNoErr(t, err)
+		wt.AssertNoErr(t, err)
 	}
 
 	_, err := zone.MatchLocal(name)
-	assertNoErr(t, err)
+	wt.AssertNoErr(t, err)
 
 	err = zone.DeleteRecordsFor(id)
 	_, err = zone.MatchLocal(name)
-	assertErrorType(t, err, (*LookupError)(nil), "after deleting records for ident")
+	wt.AssertErrorType(t, err, (*LookupError)(nil), "after deleting records for ident")
 }

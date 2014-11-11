@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/miekg/dns"
+	. "github.com/zettio/weave/logging"
 	"log"
 	"net"
 	"net/http"
