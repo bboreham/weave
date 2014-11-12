@@ -1,6 +1,7 @@
 package sortinghat
 
 import (
+	"errors"
 	"fmt"
 	. "github.com/zettio/weave/logging"
 	"net"
@@ -27,7 +28,7 @@ type Handler interface {
 
 const (
 	d2hcpTimeout time.Duration = 2 * 1e9
-	bufferSize                 = 512
+	bufferSize                 = 1024
 )
 
 // A Server defines parameters for running a D2HCP server.
@@ -36,7 +37,7 @@ type Server struct {
 	Addr string
 	// can be "udp", "udp4", etc
 	Net string
-	// UDP "Listener" to use, this is to aid in systemd's socket activation.
+	// UDP "Listener" to use.
 	PacketConn net.PacketConn
 	// Handler to invoke
 	Handler Handler
@@ -125,7 +126,7 @@ func (srv *Server) serveUDP(l *net.UDPConn) error {
 	rtimeout := d2hcpTimeout
 	// deadline is not used here
 	for {
-		m, s, e := srv.readUDP(l, rtimeout)
+		m, a, e := srv.readUDP(l, rtimeout)
 		select {
 		case <-srv.stopUDP:
 			return nil
@@ -135,27 +136,27 @@ func (srv *Server) serveUDP(l *net.UDPConn) error {
 			continue
 		}
 		srv.wgUDP.Add(1)
-		go srv.serve(s.RemoteAddr(), m, l, s)
+		go srv.serve(a, m, l)
 	}
 	panic("d2hcp: not reached")
 }
 
-func (srv *Server) readUDP(conn *net.UDPConn, timeout time.Duration) ([]byte, *sessionUDP, error) {
+func (srv *Server) readUDP(conn *net.UDPConn, timeout time.Duration) ([]byte, net.Addr, error) {
 	conn.SetReadDeadline(time.Now().Add(timeout))
 	m := make([]byte, bufferSize)
-	n, s, e := readFromSessionUDP(conn, m)
+	n, a, e := conn.ReadFrom(m)
 	if e != nil || n == 0 {
 		if e != nil {
 			return nil, nil, e
 		}
-		return nil, nil, ErrShortRead
+		return nil, nil, errors.New("short read")
 	}
 	m = m[:n]
-	return m, s, nil
+	return m, a, nil
 }
 
 // Serve a new connection.
-func (srv *Server) serve(a net.Addr, m []byte, u *net.UDPConn, s *sessionUDP) {
+func (srv *Server) serve(a net.Addr, m []byte, u *net.UDPConn) {
 	req := new(Msg)
 	err := req.Unpack(m)
 	if err != nil {
