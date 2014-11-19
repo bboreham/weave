@@ -63,8 +63,8 @@ func checkWarn(e error) {
 	}
 }
 
-func StartServer(iface *net.Interface, d2hcpPort int, httpPort int, wait int) error {
-	go ListenHttp(httpPort)
+func StartServer(space Space, iface *net.Interface, d2hcpPort int, httpPort int, wait int) error {
+	go ListenHttp(httpPort, space)
 
 	address := fmt.Sprintf(":%d", d2hcpPort)
 	Info.Printf("Listening for D2HCP on %s", address)

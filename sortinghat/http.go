@@ -14,12 +14,19 @@ func httpErrorAndLog(level *log.Logger, w http.ResponseWriter, msg string,
 	level.Printf(logmsg, logargs...)
 }
 
-func ListenHttp(port int) {
+func ListenHttp(port int, space Space) {
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "All good with sortinghat")
 	})
 	http.HandleFunc("/ip/", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "10.0.3.4")
+		newAddr, err := space.Allocate()
+		if err == nil {
+			io.WriteString(w, newAddr.String())
+		} else {
+			httpErrorAndLog(
+				Error, w, "Internal error", http.StatusInternalServerError,
+				"Unexpected error: %s", err)
+		}
 	})
 
 	address := fmt.Sprintf(":%d", port)

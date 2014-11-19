@@ -5,6 +5,7 @@ import (
 	wt "github.com/zettio/weave/testing"
 	"io/ioutil"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -24,9 +25,10 @@ func TestHttp(t *testing.T) {
 		testAddr1   = "10.0.3.4"
 	)
 
+	space := NewSpace(net.ParseIP(testAddr1), 3)
 	port := rand.Intn(10000) + 32768
 	fmt.Println("Http test on port", port)
-	go ListenHttp(port)
+	go ListenHttp(port, space)
 
 	time.Sleep(100 * time.Millisecond) // Allow for http server to get going
 
