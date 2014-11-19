@@ -23,6 +23,7 @@ func HttpGet(t *testing.T, url string) string {
 func TestHttp(t *testing.T) {
 	var (
 		containerID = "deadbeef"
+		container2  = "baddf00d"
 		testAddr1   = "10.0.3.4"
 	)
 
@@ -37,6 +38,12 @@ func TestHttp(t *testing.T) {
 	addr1 := HttpGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
 	if addr1 != testAddr1 {
 		t.Fatalf("Expected address %s but got %s", testAddr1, addr1)
+	}
+
+	// Ask the http server for another address
+	addr2 := HttpGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container2))
+	if addr2 == testAddr1 {
+		t.Fatalf("Expected different address but got %s", addr2)
 	}
 
 	// Would like to shut down the http server at the end of this test

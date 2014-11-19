@@ -19,13 +19,12 @@ func ListenHttp(port int, space Space) {
 		io.WriteString(w, "All good with sortinghat")
 	})
 	http.HandleFunc("/ip/", func(w http.ResponseWriter, r *http.Request) {
-		newAddr, err := space.Allocate()
-		if err == nil {
+		if newAddr := space.Allocate(); newAddr != nil {
 			io.WriteString(w, newAddr.String())
 		} else {
 			httpErrorAndLog(
 				Error, w, "Internal error", http.StatusInternalServerError,
-				"Unexpected error: %s", err)
+				"No free addresses")
 		}
 	})
 
