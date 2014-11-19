@@ -38,7 +38,7 @@ func TestHttp(t *testing.T) {
 	defer resp.Body.Close()
 	body, _ := ioutil.ReadAll(resp.Body)
 	if string(body) != testAddr1 {
-		t.Fatalf("Expected address %d but got %d", testAddr1, string(body))
+		t.Fatalf("Expected address %s but got %s", testAddr1, string(body))
 	}
 
 	// Would like to shut down the http server at the end of this test

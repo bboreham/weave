@@ -98,8 +98,6 @@ func (srv *Server) ListenAndServe() error {
 		return e
 	}
 	return srv.serveUDP(l)
-
-	return &DError{err: "bad network"}
 }
 
 func (srv *Server) ActivateAndServe() error {
@@ -124,7 +122,6 @@ func (srv *Server) serveUDP(l *net.UDPConn) error {
 	defer l.Close()
 
 	rtimeout := d2hcpTimeout
-	// deadline is not used here
 	for {
 		m, a, e := srv.readUDP(l, rtimeout)
 		select {
@@ -138,7 +135,6 @@ func (srv *Server) serveUDP(l *net.UDPConn) error {
 		srv.wgUDP.Add(1)
 		go srv.serve(a, m, l)
 	}
-	panic("d2hcp: not reached")
 }
 
 func (srv *Server) readUDP(conn *net.UDPConn, timeout time.Duration) ([]byte, net.Addr, error) {
