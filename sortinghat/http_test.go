@@ -40,10 +40,17 @@ func TestHttp(t *testing.T) {
 		t.Fatalf("Expected address %s but got %s", testAddr1, addr1)
 	}
 
-	// Ask the http server for another address
+	// Ask the http server for another address and check it's different
 	addr2 := HttpGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container2))
 	if addr2 == testAddr1 {
 		t.Fatalf("Expected different address but got %s", addr2)
+	}
+
+	// Now free the first one, and we should get it back when we ask
+	space.Free(net.ParseIP(addr1))
+	addr3 := HttpGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container2))
+	if addr3 != testAddr1 {
+		t.Fatalf("Expected address %s but got %s", testAddr1, addr1)
 	}
 
 	// Would like to shut down the http server at the end of this test
