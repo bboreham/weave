@@ -67,10 +67,10 @@ func StartServer(iface *net.Interface, d2hcpPort int, httpPort int, wait int) er
 	go ListenHttp(httpPort)
 
 	address := fmt.Sprintf(":%d", d2hcpPort)
+	Info.Printf("Listening for D2HCP on %s", address)
 	err := ListenAndServe(address, "udp")
 	checkFatal(err)
 
-	Info.Printf("Listening for D2HCP on %s", address)
 	return nil
 }
 

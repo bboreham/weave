@@ -20,7 +20,8 @@ func main() {
 
 	flag.StringVar(&ifaceName, "iface", "", "name of interface to use for multicast")
 	flag.IntVar(&wait, "wait", 0, "number of seconds to wait for interface to be created and come up (defaults to 0)")
-	flag.IntVar(&httpPort, "httpport", 6786, "port to listen to HTTP requests (defaults to 6786)")
+	flag.IntVar(&d2hcpPort, "d2hcport", 6786, "port to listen to d2hcp peers")
+	flag.IntVar(&httpPort, "httpport", 6787, "port to listen to HTTP requests (defaults to 6786)")
 	flag.BoolVar(&debug, "debug", false, "output debugging info to stderr")
 	flag.Parse()
 
