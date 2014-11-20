@@ -302,6 +302,15 @@ tell_dns() {
     http_call $1 $DNS_CONTAINER_NAME $DNS_HTTP_PORT /name/$CONTAINER/$WEAVE_ADDR_IP $MORE_ARGS
 }
 
+get_ip() {
+    # get the long form of the container ID
+    CONTAINER=$(docker inspect --format '{{.Id}}' $1 2>/dev/null)
+    ip="localhost"
+    port="6787"
+    url="/ip/$CONTAINER"
+    curl -s http://$ip:$port$url
+}
+
 # Check that a container named $1 with image $2 is not running
 check_not_running() {
     case $(docker inspect --format '{{ .State.Running }} {{ .Config.Image }}' $1 2>/dev/null) in
@@ -419,6 +428,8 @@ case "$COMMAND" in
            esac;
         done
         CONTAINER=$(docker run $DNS_ARG $DNS_SEARCH_ARG -d "$@" | tail -n 1)
+        CIDR=$(get_ip $CONTAINER)/24
+        echo "CIDR=$CIDR"
         with_container_netns $CONTAINER attach $CIDR >/dev/null
         tell_dns PUT $CONTAINER $CIDR
         echo $CONTAINER
