@@ -38,14 +38,17 @@ command_exists () {
 
 IMAGE=zettio/weave
 DNS_IMAGE=zettio/weavedns
+CONF_IMAGE=zettio/weaveconf
 CONTAINER_NAME=weave
 DNS_CONTAINER_NAME=weavedns
+CONF_CONTAINER_NAME=weaveconf
 BRIDGE=weave
 CONTAINER_IFNAME=ethwe
 MTU=65535
 PORT=6783
 HTTP_PORT=6784
 DNS_HTTP_PORT=6785
+CONF_HTTP_PORT=6787
 
 COMMAND=$1
 
@@ -302,13 +305,11 @@ tell_dns() {
     http_call $1 $DNS_CONTAINER_NAME $DNS_HTTP_PORT /name/$CONTAINER/$WEAVE_ADDR_IP $MORE_ARGS
 }
 
-get_ip() {
+# Fetch an IP address for container $1
+ask_ip() {
     # get the long form of the container ID
     CONTAINER=$(docker inspect --format '{{.Id}}' $1 2>/dev/null)
-    ip="localhost"
-    port="6787"
-    url="/ip/$CONTAINER"
-    curl -s http://$ip:$port$url
+    http_call GET $CONF_CONTAINER_NAME $CONF_HTTP_PORT /ip/$CONTAINER
 }
 
 # Check that a container named $1 with image $2 is not running
@@ -382,6 +383,16 @@ case "$COMMAND" in
         with_container_netns $CONTAINER attach $CIDR >/dev/null
         echo $CONTAINER
         ;;
+    launch-conf)
+        [ $# -gt 0 ] || usage
+        CIDR=$1
+        shift 1
+        check_not_running $CONF_CONTAINER_NAME $CONF_IMAGE
+        create_bridge
+        CONTAINER=$(docker run --privileged -d --name=$CONF_CONTAINER_NAME -v /var/run/docker.sock:/var/run/docker.sock $CONF_IMAGE "$@" | tail -n 1)
+        with_container_netns $CONTAINER attach $CIDR >/dev/null
+        echo $CONTAINER
+        ;;
     connect)
         [ $# -eq 1 ] || usage
         http_call POST $CONTAINER_NAME $HTTP_PORT /connect -d "peer=$1"
@@ -412,9 +423,10 @@ case "$COMMAND" in
         ;;
     run)
         [ $# -gt 0 ] || usage
-        validate_cidr $1
-        CIDR=$1
-        shift 1
+        if is_cidr "$1" ; then
+            CIDR=$1
+            shift 1
+        fi
         create_bridge
         DNS_ARG=$(docker inspect --format '--dns {{ .NetworkSettings.IPAddress }}'" --link $DNS_CONTAINER_NAME:$DNS_CONTAINER_NAME" $DNS_CONTAINER_NAME 2>/dev/null) || true
         DNS_SEARCH_ARG="--dns-search=."
@@ -428,7 +440,9 @@ case "$COMMAND" in
            esac;
         done
         CONTAINER=$(docker run $DNS_ARG $DNS_SEARCH_ARG -d "$@" | tail -n 1)
-        CIDR=$(get_ip $CONTAINER)/24
+        if [ -z $CIDR ] ; then
+            CIDR=$(ask_ip $CONTAINER)/24
+        fi
         echo "CIDR=$CIDR"
         with_container_netns $CONTAINER attach $CIDR >/dev/null
         tell_dns PUT $CONTAINER $CIDR
