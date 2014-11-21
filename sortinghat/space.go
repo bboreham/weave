@@ -1,6 +1,7 @@
 package sortinghat
 
 import (
+	"fmt"
 	"net"
 )
 
@@ -75,4 +76,8 @@ func (space *simpleSpace) DeleteRecordsFor(ident string) error {
 	}
 	space.recs = space.recs[:w]
 	return nil
+}
+
+func (space *simpleSpace) String() string {
+	return fmt.Sprintf("Space allocator start %s, size %d, allocated %d, free %d", space.start, space.size, len(space.recs), len(space.free_list))
 }

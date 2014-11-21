@@ -27,7 +27,7 @@ func httpErrorAndLog(level *log.Logger, w http.ResponseWriter, msg string,
 
 func ListenHttp(port int, space Space) {
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "All good with sortinghat")
+		io.WriteString(w, fmt.Sprintln(space))
 	})
 	http.HandleFunc("/ip/", func(w http.ResponseWriter, r *http.Request) {
 		ident, err := parseUrl(r.URL.Path)
