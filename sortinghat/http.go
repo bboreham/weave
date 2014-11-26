@@ -25,10 +25,7 @@ func httpErrorAndLog(level *log.Logger, w http.ResponseWriter, msg string,
 	level.Printf(logmsg, logargs...)
 }
 
-func ListenHttp(port int, space Space) {
-	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, fmt.Sprintln(space))
-	})
+func HttpHandleIP(space Space) {
 	http.HandleFunc("/ip/", func(w http.ResponseWriter, r *http.Request) {
 		ident, err := parseUrl(r.URL.Path)
 		if err != nil {
@@ -41,6 +38,13 @@ func ListenHttp(port int, space Space) {
 				"No free addresses")
 		}
 	})
+}
+
+func ListenHttp(port int, space Space) {
+	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, fmt.Sprintln(space))
+	})
+	HttpHandleIP(space)
 
 	address := fmt.Sprintf(":%d", port)
 	if err := http.ListenAndServe(address, nil); err != nil {
