@@ -2,10 +2,8 @@ package sortinghat
 
 import (
 	"errors"
-	"fmt"
 	. "github.com/zettio/weave/logging"
 	"net"
-	"sync"
 	"time"
 )
 
@@ -31,24 +29,7 @@ const (
 	bufferSize                 = 1024
 )
 
-// A Server defines parameters for running a D2HCP server.
 type Server struct {
-	// Address to listen on.
-	Addr string
-	// can be "udp", "udp4", etc
-	Net string
-	// UDP "Listener" to use.
-	PacketConn net.PacketConn
-	// Handler to invoke
-	Handler Handler
-
-	// For graceful shutdown.
-	stopUDP chan bool
-	wgUDP   sync.WaitGroup
-
-	// make start/shutdown not racy
-	lock    sync.Mutex
-	started bool
 }
 
 func checkFatal(e error) {
@@ -63,78 +44,14 @@ func checkWarn(e error) {
 	}
 }
 
-func StartServer(space Space, iface *net.Interface, d2hcpPort int, httpPort int, wait int) error {
-	go ListenHttp(httpPort, space)
+func NewServer() (*Server, error) {
+	return new(Server), nil
+}
 
-	address := fmt.Sprintf(":%d", d2hcpPort)
-	Info.Printf("Listening for D2HCP on %s", address)
-	err := ListenAndServe(address, "udp")
-	checkFatal(err)
+func (server *Server) Start(space Space, iface *net.Interface, d2hcpPort int, httpPort int, wait int) error {
+	ListenHttp(httpPort, space)
 
 	return nil
-}
-
-// ListenAndServe Starts a server on addresss and network specified.
-func ListenAndServe(addr string, network string) error {
-	server := &Server{Addr: addr, Net: network, Handler: nil} //handler}
-	return server.ListenAndServe()
-}
-
-func (srv *Server) ListenAndServe() error {
-	srv.lock.Lock()
-	if srv.started {
-		return &DError{err: "server already started"}
-	}
-	srv.stopUDP = make(chan bool)
-	srv.started = true
-	srv.lock.Unlock()
-	addr := srv.Addr
-	a, e := net.ResolveUDPAddr(srv.Net, addr)
-	if e != nil {
-		return e
-	}
-	l, e := net.ListenUDP(srv.Net, a)
-	if e != nil {
-		return e
-	}
-	return srv.serveUDP(l)
-}
-
-func (srv *Server) ActivateAndServe() error {
-	srv.lock.Lock()
-	if srv.started {
-		return &DError{err: "server already started"}
-	}
-	srv.stopUDP = make(chan bool)
-	srv.started = true
-	srv.lock.Unlock()
-	if srv.PacketConn != nil {
-		if t, ok := srv.PacketConn.(*net.UDPConn); ok {
-			return srv.serveUDP(t)
-		}
-	}
-	return &DError{err: "bad listeners"}
-}
-
-// serveUDP starts a UDP listener for the server.
-// Each request is handled in a seperate goroutine.
-func (srv *Server) serveUDP(l *net.UDPConn) error {
-	defer l.Close()
-
-	rtimeout := d2hcpTimeout
-	for {
-		m, a, e := srv.readUDP(l, rtimeout)
-		select {
-		case <-srv.stopUDP:
-			return nil
-		default:
-		}
-		if e != nil {
-			continue
-		}
-		srv.wgUDP.Add(1)
-		go srv.serve(a, m, l)
-	}
 }
 
 func (srv *Server) readUDP(conn *net.UDPConn, timeout time.Duration) ([]byte, net.Addr, error) {

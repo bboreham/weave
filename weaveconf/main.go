@@ -55,7 +55,9 @@ func main() {
 		}
 	}
 
-	err := sortinghat.StartServer(space, iface, d2hcpPort, httpPort, wait)
+	server, _ := sortinghat.NewServer()
+
+	err := server.Start(space, iface, d2hcpPort, httpPort, wait)
 	if err != nil {
 		logging.Error.Fatal("Failed to start server", err)
 	}
