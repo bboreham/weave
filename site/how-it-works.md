@@ -44,35 +44,22 @@ networks with changing topology.
 When the weave router forwards packets, the encapsulation looks
 something like this:
 
-    +-----------------------------------+
-    | Name of sending peer              |
-    +-----------------------------------+
-    | Frame 1: Name of capturing peer   |
-    +-----------------------------------+
-    | Frame 1: Name of destination peer |
-    +-----------------------------------+
-    | Frame 1: Captured payload length  |
-    +-----------------------------------+
-    | Frame 1: Captured payload         |
-    +-----------------------------------+
-    | Frame 2: Name of capturing peer   |
-    +-----------------------------------+
-    | Frame 2: Name of destination peer |
-    +-----------------------------------+
-    | Frame 2: Captured payload length  |
-    +-----------------------------------+
-    | Frame 2: Captured payload         |
-    +-----------------------------------+
-    |                ...                |
-    +-----------------------------------+
-    | Frame N: Name of capturing peer   |
-    +-----------------------------------+
-    | Frame N: Name of destination peer |
-    +-----------------------------------+
-    | Frame N: Captured payload length  |
-    +-----------------------------------+
-    | Frame N: Captured payload         |
-    +-----------------------------------+
+<table class="record">
+<tr><td>Name of sending peer</td></tr>
+<tr><td>Frame 1: Name of capturing peer</td></tr>
+<tr><td>Frame 1: Name of destination peer</td></tr>
+<tr><td>Frame 1: Captured payload length</td></tr>
+<tr><td>Frame 1: Captured payload</td></tr>
+<tr><td>Frame 2: Name of capturing peer</td></tr>
+<tr><td>Frame 2: Name of destination peer</td></tr>
+<tr><td>Frame 2: Captured payload length</td></tr>
+<tr><td>Frame 2: Captured payload</td></tr>
+<tr><td align=center>...</td></tr>
+<tr><td>Frame N: Name of capturing peer</td></tr>
+<tr><td>Frame N: Name of destination peer</td></tr>
+<tr><td>Frame N: Captured payload length</td></tr>
+<tr><td>Frame N: Captured payload</td></tr>
+</table>
 
 The name of the sending peer enables the receiving peer to identify
 who sent this UDP packet. This is followed by the meta data and
@@ -171,39 +158,36 @@ UDP connections carry captured traffic between peers. For a UDP packet
 sent between peers that are using crypto, the encapsulation looks as
 follows:
 
-    +-----------------------------------+
-    | Name of sending peer              |
-    +-----------------------------------+
-    | Nonce offset and flags            |
-    +-----------------------------------+
-    | NaCl SecretBox overheads          |
-    +-----------------------------------+ -+
-    | Frame 1: Name of capturing peer   |  |
-    +-----------------------------------+  | This section is encrypted
-    | Frame 1: Name of destination peer |  | using the ephemeral session
-    +-----------------------------------+  | key between the weave peers
-    | Frame 1: Captured payload length  |  | sending and receiving this
-    +-----------------------------------+  | packet.
-    | Frame 1: Captured payload         |  |
-    +-----------------------------------+  |
-    | Frame 2: Name of capturing peer   |  |
-    +-----------------------------------+  |
-    | Frame 2: Name of destination peer |  |
-    +-----------------------------------+  |
-    | Frame 2: Captured payload length  |  |
-    +-----------------------------------+  |
-    | Frame 2: Captured payload         |  |
-    +-----------------------------------+  |
-    |                ...                |  |
-    +-----------------------------------+  |
-    | Frame N: Name of capturing peer   |  |
-    +-----------------------------------+  |
-    | Frame N: Name of destination peer |  |
-    +-----------------------------------+  |
-    | Frame N: Captured payload length  |  |
-    +-----------------------------------+  |
-    | Frame N: Captured payload         |  |
-    +-----------------------------------+ -+
+<table class="record" style="border-width:0px;" width="90%">
+<colgroup>
+<col width="48%">
+<col width="4%">
+<col width="48%">
+</colgroup>
+<tr><td>Name of sending peer</td></tr>
+<tr><td>Nonce offset and flags</td></tr>
+<tr><td>NaCl SecretBox overheads</td></tr>
+<tr><td>Frame 1: Name of capturing peer</td>
+<td rowspan="13"></td>
+</tr>
+<tr><td>Frame 1: Name of destination peer</td>
+<td rowspan="12" style="border-width:0px;">
+This section is encrypted using the ephemeral session key between 
+the weave peers sending and receiving this packet.
+</td>
+</tr>
+<tr><td>Frame 1: Captured payload length</td></tr>
+<tr><td>Frame 1: Captured payload</td></tr>
+<tr><td>Frame 2: Name of capturing peer</td></tr>
+<tr><td>Frame 2: Name of destination peer</td></tr>
+<tr><td>Frame 2: Captured payload length</td></tr>
+<tr><td>Frame 2: Captured payload</td></tr>
+<tr><td align=center>...</td></tr>
+<tr><td>Frame N: Name of capturing peer</td></tr>
+<tr><td>Frame N: Name of destination peer</td></tr>
+<tr><td>Frame N: Captured payload length</td></tr>
+<tr><td>Frame N: Captured payload</td></tr>
+</table>
 
 This is very similar to the [non-crypto encapsulation](#encapsulation).
 
