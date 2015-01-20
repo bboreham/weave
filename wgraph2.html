@@ -1,0 +1,84 @@
+<!doctype html>
+<html>
+<head>
+  <title>Weave Network</title>
+
+  <script type="text/javascript" src="visjs/vis.js"></script>
+  <script src="jquery.js"></script>
+  <link href="../../dist/vis.css" rel="stylesheet" type="text/css" />
+
+  <style type="text/css">
+    #mynetwork {
+      width: 1200px;
+      height: 800px;
+      border: 1px solid lightgray;
+    }
+  </style>
+<script type="text/javascript">
+    var nodes = null;
+    var edges = null;
+    var network = null;
+
+    function destroy() {
+      if (network !== null) {
+        network.destroy();
+        network = null;
+      }
+    }
+
+    function draw() {
+      destroy();
+
+    nodes = [];
+    edges = [];
+    reverse_edges = {};
+
+    $.getJSON("http://" + ipaddr.value + ":6784/topo-json", function(data) {
+      $.each(data.topology, function(x, peer) { 
+        nodes.push({
+          id: peer.name,
+          label: peer.name
+        });
+      });
+    
+      $.each(data.topology, function(x, peer) { 
+        thisPeer = peer;
+        $.each(peer.connections, function(y, conn) {
+          from = peer.name
+          to = conn.remoteName
+          if (reverse_edges[from+to] != 1) {
+            edges.push({ from: from, to: to });
+            reverse_edges[to+from] = 1
+          }
+        });
+      });
+
+    // create a network
+    var container = document.getElementById('mynetwork');
+    var data = {
+      nodes: nodes,
+      edges: edges
+    };
+    var options = {};
+    var network = new vis.Network(container, data, options);
+    });
+}
+</script>
+</head>
+
+<body onload="draw();">
+<section>
+A rendering of the weave network, using visjs
+<br>
+<input id="loadbtn" type="button" value="reload" onclick="draw();" />
+Monitor endpoint: <input id="ipaddr" type="text" value="172.17.0.142"/>
+</section>
+
+<br>
+
+<div id="mynetwork"></div>
+
+<p id="selection"></p>
+<p id="stabilization"></p>
+</body>
+</html>

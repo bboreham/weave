@@ -1,0 +1,76 @@
+<!doctype html>
+
+<meta charset="utf-8">
+<title>Weave Network</title>
+
+<link rel="stylesheet" href="demo.css">
+<script src="dagre/d3.v3.min.js" charset="utf-8"></script>
+<script src="dagre/dagre-d3.js"></script>
+<script src="jquery.js"></script>
+
+<style id="css">
+body {
+  font: 300 14px 'Helvetica Neue', Helvetica;
+}
+
+.node rect {
+  stroke: #333;
+  fill: #fff;
+}
+
+.edgePath path {
+  stroke: #333;
+  fill: #333;
+  stroke-width: 1.5px;
+}
+</style>
+
+<body onLoad="doLoad()">
+
+<h1>Weave Network</h1>
+
+<svg width=1200 height=800><g/></svg>
+
+<section>
+<input id="loadbtn" type="button" value="reload" onclick="doLoad();" />
+A rendering of the weave network, using dagre-d3
+</section>
+
+<script id="js">
+var svg = d3.select("svg"),
+    inner = svg.select("g");
+
+// Set up zoom support
+var zoom = d3.behavior.zoom().on("zoom", function() {
+      inner.attr("transform", "translate(" + d3.event.translate + ")" +
+                                  "scale(" + d3.event.scale + ")");
+    });
+svg.call(zoom);
+
+// Create the renderer
+var render = new dagreD3.render();
+
+doLoad = function() {
+// Create a new directed graph
+var g = new dagreD3.graphlib.Graph().setGraph({ rankdir: "TB" });
+
+$.getJSON("http://172.17.0.101:6784/topo-json", function(data) {
+$.each(data.topology, function(x, peer) { 
+   g.setNode(peer.name, { label: peer.name }); 
+});
+
+$.each(data.topology, function(x, peer) { 
+   thisPeer = peer;
+   $.each(peer.connections, function(y, conn) {
+     //alert("from " + peer.name + " to " + conn.remoteName)
+     g.setEdge(peer.name, conn.remoteName, {label: ""} );
+  });
+});
+
+// Run the renderer. This is what draws the final graph.
+render(inner, g);
+
+});
+}
+
+</script>
