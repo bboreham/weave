@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+
+if ! status=$(sudo docker inspect --format='{{.State.Running}} {{.NetworkSettings.IPAddress}}' weave 2>/dev/null); then
+    echo  "weave container is not present; have you launched it?" >&2
+    exit 1
+fi
+case "$status" in
+    "true ")
+        echo "weave container has no IP address; is Docker networking enabled?" >&2
+        exit 1
+        ;;
+    true*)
+        ip="${status#true }"
+        ;;
+    *)
+        echo "weave container is not running." >&2
+        exit 1
+        ;;
+esac
+
+./httpproxy -dest http://$ip:6784 -listen localhost:6784
