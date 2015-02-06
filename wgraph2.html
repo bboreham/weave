@@ -3,9 +3,9 @@
 <head>
   <title>Weave Network</title>
 
-  <script type="text/javascript" src="visjs/vis.js"></script>
+  <script type="text/javascript" src="http://visjs.org/dist/vis.js"></script>
   <script src="jquery.js"></script>
-  <link href="../../dist/vis.css" rel="stylesheet" type="text/css" />
+  <link href="http://visjs.org/dist/vis.css" rel="stylesheet" type="text/css" />
 
   <style type="text/css">
     #mynetwork {
@@ -26,52 +26,73 @@
       }
     }
 
-    function draw() {
+    function create() {
       destroy();
 
-    nodes = [];
-    edges = [];
-    reverse_edges = {};
+    nodes = new vis.DataSet();
+    edges = new vis.DataSet();
+    // create a network
+    var container = document.getElementById('mynetwork');
+    var data = {
+    nodes: nodes,
+    edges: edges
+    };
+    var options = {
+    physics: {barnesHut: {gravitationalConstant: -5000, springLength: 200}}
+    };
+    //var options = { configurePhysics:true }
+    var network = new vis.Network(container, data, options);
+    }
 
-    $.getJSON("http://" + ipaddr.value + ":6784/topo-json", function(data) {
-      $.each(data.topology, function(x, peer) { 
-        nodes.push({
-          id: peer.name,
-          label: peer.name
+    function update() {
+    reverse_edges = {};
+    peers_now = {};
+
+    $.getJSON("http://" + ipaddr.value + ":6784/status-json", function(data) {
+      $.each(data.Peers.sort(function(a,b){return a.Name.localeCompare(b.Name);}), function(x, peer) { 
+        id = "P"+peer.Name
+        nodes.update({
+          id: id,
+          label: "Peer " + x,
+          title: peer.Name,
+          group: "peers"
         });
-      });
-    
-      $.each(data.topology, function(x, peer) { 
-        thisPeer = peer;
-        $.each(peer.connections, function(y, conn) {
-          from = peer.name
-          to = conn.remoteName
+        peers_now[id] = 1
+        $.each(peer.Connections, function(y, conn) {
+          from = peer.Name
+          to = conn.RemoteName
           if (reverse_edges[from+to] != 1) {
-            edges.push({ from: from, to: to });
+            edges.update({ id:to+from, from: "P"+from, to: "P"+to });
             reverse_edges[to+from] = 1
           }
         });
       });
 
-    // create a network
-    var container = document.getElementById('mynetwork');
-    var data = {
-      nodes: nodes,
-      edges: edges
-    };
-    var options = {};
-    var network = new vis.Network(container, data, options);
+      $.each(data.Macs, function(x, mac) {
+        nodes.update({
+          id: "C"+mac.Mac,
+          label: "C",
+          title: mac.Mac,
+          group: "container"
+        });
+        edges.update({id: mac.Mac, from: "P"+mac.PeerName, to: "C"+mac.Mac, length: 40})
+      });
+
+      nodes.forEach(function(node) {
+        if (node.group == "peers" && !peers_now[node.id])
+          nodes.remove(node.id);
+      });
     });
 }
 </script>
 </head>
 
-<body onload="draw();">
+<body onload="create();setInterval(update, 1000);">
 <section>
 A rendering of the weave network, using visjs
 <br>
-<input id="loadbtn" type="button" value="reload" onclick="draw();" />
-Monitor endpoint: <input id="ipaddr" type="text" value="172.17.0.142"/>
+<input id="loadbtn" type="button" value="reload" onclick="update();" />
+Monitor endpoint: <input id="ipaddr" type="text" value="localhost"/>
 </section>
 
 <br>
