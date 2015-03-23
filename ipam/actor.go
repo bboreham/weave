@@ -45,14 +45,10 @@ type gossipBroadcast struct {
 }
 type gossipEncode struct {
 	resultChan chan<- []byte
-	keySet     router.GossipKeySet
-}
-type gossipFullSet struct {
-	resultChan chan<- router.GossipKeySet
 }
 type gossipReply struct {
-	err       error
-	updateSet router.GossipKeySet
+	err    error
+	update router.GossipData
 }
 type gossipUpdate struct {
 	resultChan chan<- gossipReply
@@ -131,26 +127,19 @@ func (alloc *Allocator) OnGossipBroadcast(msg []byte) error {
 }
 
 // Sync.
-func (alloc *Allocator) FullSet() router.GossipKeySet {
-	resultChan := make(chan router.GossipKeySet)
-	alloc.queryChan <- gossipFullSet{resultChan}
-	return <-resultChan
-}
-
-// Sync.
-func (alloc *Allocator) Encode(keys router.GossipKeySet) []byte {
+func (alloc *Allocator) Encode() []byte {
 	resultChan := make(chan []byte)
-	alloc.queryChan <- gossipEncode{resultChan, keys}
+	alloc.queryChan <- gossipEncode{resultChan}
 	return <-resultChan
 }
 
 // Sync.
-func (alloc *Allocator) OnUpdate(msg []byte) (router.GossipKeySet, error) {
+func (alloc *Allocator) OnGossip(msg []byte) (router.GossipData, error) {
 	alloc.Debugln("Allocator.OnGossip:", len(msg), "bytes")
 	resultChan := make(chan gossipReply)
 	alloc.queryChan <- gossipUpdate{resultChan, msg}
 	ret := <-resultChan
-	return ret.updateSet, ret.err
+	return ret.update, ret.err
 }
 
 // ACTOR server
@@ -179,7 +168,6 @@ func (alloc *Allocator) queryLoop(queryChan <-chan interface{}, withTimers bool)
 			case gossipBroadcast:
 			case gossipUpdate:
 			case gossipEncode:
-			case gossipFullSet:
 			}
 		}
 	}

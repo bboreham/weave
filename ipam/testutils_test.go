@@ -227,7 +227,7 @@ func (grouter *TestGossipRouter) connect(sender router.PeerName, gossiper router
 					gossiper.OnGossipBroadcast(message.buf)
 				}
 			case <-gossipTimer:
-				grouter.GossipBroadcast(gossiper.(router.GossipData).Encode(gossiper.(router.GossipData).FullSet()))
+				grouter.GossipBroadcast(gossiper.(router.GossipData).Encode())
 			}
 		}
 	}()
@@ -263,7 +263,7 @@ func makeNetworkOfAllocators(size int, cidr string) ([]*Allocator, TestGossipRou
 		allocs[i] = alloc
 	}
 
-	gossipRouter.GossipBroadcast(allocs[size-1].Encode(allocs[size-1].FullSet()))
+	gossipRouter.GossipBroadcast(allocs[size-1].Encode())
 	time.Sleep(1000 * time.Millisecond)
 	return allocs, gossipRouter
 }

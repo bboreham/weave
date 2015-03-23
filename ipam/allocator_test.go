@@ -159,7 +159,7 @@ func TestCancel(t *testing.T) {
 	alloc2.Start()
 
 	// This is needed to tell one another about each other
-	alloc1.OnGossipBroadcast(alloc2.Encode(alloc2.FullSet()))
+	alloc1.OnGossipBroadcast(alloc2.EncodeState())
 	time.Sleep(100 * time.Millisecond)
 
 	// Get some IPs
@@ -201,7 +201,7 @@ func (alloc *Allocator) AssertNothingPending(t *testing.T) {
 }
 
 func (alloc *Allocator) EncodeState() []byte {
-	return alloc.Encode(alloc.FullSet())
+	return alloc.Encode()
 }
 
 func (alloc *Allocator) EncodeClaimMsg(start string, size uint32) []byte {
