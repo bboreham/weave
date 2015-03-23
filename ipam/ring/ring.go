@@ -28,7 +28,7 @@ func (es entries) Less(i, j int) bool { return es[i].Token < es[j].Token }
 func (es entries) Swap(i, j int)      { panic("Should never be swapping entries!") }
 
 type Ring struct {
-	Start, End uint32          // [min, max) tokens in this ring
+	Start, End uint32          // [min, max] tokens in this ring.
 	Peername   router.PeerName // name of peer owning this ring instance
 	Entries    entries         // list of entries sorted by token
 }
@@ -46,23 +46,36 @@ func (r *Ring) assertInvariants() {
 	}
 }
 
+var (
+	ErrNotSorted       = errors.New("Ring not sorted")
+	ErrTokenRepeated   = errors.New("Token appears twice in ring")
+	ErrTokenOutOfRange = errors.New("Token is out of range")
+)
+
 func (r *Ring) checkInvariants() error {
 	if !sort.IsSorted(r.Entries) {
-		return errors.New("Ring not sorted")
+		return ErrNotSorted
 	}
 
 	// Check no token appears twice
+	tokens := make(map[uint32]bool)
+	for _, entry := range r.Entries {
+		if _, ok := tokens[entry.Token]; ok {
+			return ErrTokenRepeated
+		}
+		tokens[entry.Token] = true
+	}
 
 	if len(r.Entries) == 0 {
 		return nil
 	}
 
 	if r.Entries[0].Token < r.Start {
-		return errors.New("First token is out of range")
+		return ErrTokenOutOfRange
 	}
 
-	if r.Entries[len(r.Entries)-1].Token >= r.End {
-		return errors.New("Last token is out of range")
+	if r.Entries[len(r.Entries)-1].Token > r.End {
+		return ErrTokenOutOfRange
 	}
 
 	return nil
@@ -83,8 +96,11 @@ func (r *Ring) insertAt(i int, e entry) {
 }
 
 // New creates an empty ring belonging to peer.
-func New(start, end net.IP, peer router.PeerName) Ring {
-	return Ring{ipam.Ip4int(start), ipam.Ip4int(end), peer, make([]entry, 0)}
+func New(startIP, endIP net.IP, peer router.PeerName) Ring {
+	start, end := ipam.Ip4int(startIP), ipam.Ip4int(endIP)
+	assert(start <= end, "Start needs to be less than end!")
+
+	return Ring{start, end, peer, make([]entry, 0)}
 }
 
 // Is token between entries at i and j?
@@ -100,8 +116,9 @@ func (r *Ring) between(token uint32, i, j int) bool {
 	case first.Token == second.Token:
 		// This implies there is only one token
 		// on the ring (i < j and i.token == j.token)
-		// In which case everything is between.
-		return true
+		// In which case everything is between, expect
+		// this one token
+		return token != first.Token
 
 	case first.Token < second.Token:
 		return first.Token <= token && token < second.Token
@@ -172,9 +189,12 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	}
 }
 
+// Merge the given ring into this ring.
 func (r *Ring) merge(gossip Ring) error {
 	r.assertInvariants()
 
+	// Don't panic when checking the gossiped in ring.
+	// In this case just return any error found.
 	if err := gossip.checkInvariants(); err != nil {
 		return err
 	}
@@ -193,7 +213,7 @@ func (r *Ring) merge(gossip Ring) error {
 		return nil
 	}
 
-	// first count number of distinct tokens
+	// First count number of distinct tokens to build the result with
 	tokens := make(map[uint32]bool)
 	for _, entry := range r.Entries {
 		tokens[entry.Token] = true
@@ -202,7 +222,7 @@ func (r *Ring) merge(gossip Ring) error {
 		tokens[entry.Token] = true
 	}
 
-	// Merge two entries with the same token
+	// mergeEntry merges two entries with the same token
 	mergeEntry := func(existingEntry, newEntry *entry) (*entry, error) {
 		assert(existingEntry.Token == newEntry.Token, "WTF")
 		switch {
@@ -223,6 +243,7 @@ func (r *Ring) merge(gossip Ring) error {
 			return newEntry, nil
 		}
 		// This should never be hit (switch covers all cases) but go doesn't detect that.
+		assert(false, "WTF")
 		return nil, nil
 	}
 
@@ -233,7 +254,7 @@ func (r *Ring) merge(gossip Ring) error {
 	i, j := 0, 0
 
 	// Owner is the owner of the largest token
-	// TODO: What to do if ring is empty?
+	// We know are ring isn't empty at this point.
 	var currentOwner router.PeerName
 	last := func(es []entry) entry { return es[len(es)-1] }
 	if last(r.Entries).Token > last(gossip.Entries).Token {
@@ -305,4 +326,8 @@ func (r *Ring) ClaimItAll() {
 	r.insertAt(0, entry{r.Start, r.Peername, 0, 0})
 
 	r.assertInvariants()
+}
+
+func (r *Ring) String() string {
+	return ""
 }
