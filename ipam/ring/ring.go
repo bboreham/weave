@@ -29,7 +29,7 @@ func (es entries) Less(i, j int) bool { return es[i].Token < es[j].Token }
 func (es entries) Swap(i, j int)      { panic("Should never be swapping entries!") }
 
 type Ring struct {
-	Start, End uint32          // [min, max] tokens in this ring.
+	Start, End uint32          // [min, max) tokens in this ring.  Due to wrapping, min == max (effectively)
 	Peername   router.PeerName // name of peer owning this ring instance
 	Entries    entries         // list of entries sorted by token
 }
@@ -75,7 +75,7 @@ func (r *Ring) checkInvariants() error {
 		return ErrTokenOutOfRange
 	}
 
-	if r.Entries[len(r.Entries)-1].Token > r.End {
+	if r.Entries[len(r.Entries)-1].Token >= r.End {
 		return ErrTokenOutOfRange
 	}
 
@@ -138,8 +138,8 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	r.assertInvariants()
 
 	start, end := utils.Ip4int(startIP), utils.Ip4int(endIP)
-	assert(r.Start <= start && start <= r.End, "Trying to grant range outside of subnet")
-	assert(r.Start <= end && end <= r.End, "Trying to grant range outside of subnet")
+	assert(r.Start <= start && start < r.End, "Trying to grant range outside of subnet")
+	assert(r.Start < end && end <= r.End, "Trying to grant range outside of subnet")
 	assert(len(r.Entries) > 0, "Cannot grant if ring is empty!")
 
 	// Look for the start entry
@@ -150,7 +150,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	// Is start already owned by us, in which case we need
 	// to change the token and update version
 	if i < len(r.Entries) && r.Entries[i].Token == start {
-		entry := r.Entries[i]
+		entry := &r.Entries[i]
 		assert(entry.Peer == r.Peername, "Trying to mutate entry I don't own")
 		entry.Peer = peer
 		entry.Tombstone = 0
@@ -179,7 +179,11 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	//        elses ranges.
 
 	k := i + 1
-	nextEntry := r.Entries[k%len(r.Entries)]
+	nextEntry := &r.Entries[k%len(r.Entries)]
+
+	// End needs wrapping
+	end = r.Start + ((end - r.Start) % (r.End - r.Start))
+
 	if nextEntry.Token == end {
 		// That was easy
 		return

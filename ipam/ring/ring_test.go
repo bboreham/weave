@@ -10,8 +10,8 @@ import (
 )
 
 var (
-	peer1name, _ = router.PeerNameFromString("00:00:00:00:00")
-	peer2name, _ = router.PeerNameFromString("00:00:00:00:00")
+	peer1name, _ = router.PeerNameFromString("01:00:00:00:00:00")
+	peer2name, _ = router.PeerNameFromString("02:00:00:00:00:00")
 
 	ipStart, ipEnd    = net.ParseIP("10.0.0.0"), net.ParseIP("10.0.0.255")
 	ipDot10, ipDot245 = net.ParseIP("10.0.0.10"), net.ParseIP("10.0.0.245")
@@ -38,16 +38,6 @@ func TestInvariants(t *testing.T) {
 
 	ring.Entries = []entry{{end, peer1name, 0, 0}}
 	wt.AssertTrue(t, ring.checkInvariants() == ErrTokenOutOfRange, "Expected error")
-}
-
-func TestRing(t *testing.T) {
-	ring1 := New(ipStart, ipEnd, peer1name)
-	ring1.ClaimItAll()
-
-	ring2 := New(ipStart, ipEnd, peer2name)
-	ring2.merge(ring1)
-
-	ring1.GrantRangeToHost(ipDot10, ipEnd, peer2name)
 }
 
 func TestInsert(t *testing.T) {
@@ -108,4 +98,24 @@ func TestBetween(t *testing.T) {
 		wt.AssertTrue(t, ring1.between(ip, 1, 2),
 			fmt.Sprintf("Between should be true for %s!", ipStr))
 	}
+}
+
+func TestRing(t *testing.T) {
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring2 := New(ipStart, ipEnd, peer2name)
+
+	// Claim everything for peer1
+	ring1.ClaimItAll()
+	ring2.Entries = []entry{{start, peer1name, 0, 0}}
+	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
+
+	// Now grant everything to peer2
+	ring1.GrantRangeToHost(ipStart, ipEnd, peer2name)
+	ring2.Entries = []entry{{start, peer2name, 0, 1}}
+	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
+
+	// Now spint back to peer 1
+	ring2.GrantRangeToHost(ipDot10, ipEnd, peer1name)
+	ring1.Entries = []entry{{start, peer2name, 0, 1}, {dot10, peer1name, 0, 0}}
+	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 }
