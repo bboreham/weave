@@ -11,6 +11,7 @@ import (
 	"github.com/zettio/weave/router"
 	"net"
 	"sort"
+	"fmt"
 )
 
 type entry struct {
@@ -329,5 +330,10 @@ func (r *Ring) ClaimItAll() {
 }
 
 func (r *Ring) String() string {
-	return ""
+	var buffer bytes.Buffer
+	for _, entry := range r.Entries {
+		fmt.Fprintf(&buffer, "%s -> %s (%d, %d)\n", ipam.Intip4(entry.Token),
+			entry.Peer, entry.Tombstone, entry.Version)
+	}
+	return buffer.String()
 }

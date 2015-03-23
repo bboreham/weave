@@ -9,33 +9,68 @@ import (
 	"testing"
 )
 
-func TestRing(t *testing.T) {
-	var (
-		peer1name, _ = router.PeerNameFromString("00:00:00:00:00")
-		peer2name, _ = router.PeerNameFromString("00:00:00:00:00")
-		start, end   = net.ParseIP("10.0.0.0"), net.ParseIP("10.0.0.255")
-		middle       = net.ParseIP("10.0.0.128")
-	)
+var (
+	peer1name, _        = router.PeerNameFromString("00:00:00:00:00")
+	peer2name, _        = router.PeerNameFromString("00:00:00:00:00")
 
-	ring1 := New(start, end, peer1name)
+	ipStart, ipEnd      = net.ParseIP("10.0.0.0"), net.ParseIP("10.0.0.255")
+	ipDot10, ipDot245   = net.ParseIP("10.0.0.10"), net.ParseIP("10.0.0.245")
+
+	start, end          = ipam.Ip4int(ipStart), ipam.Ip4int(ipEnd)
+	dot10, dot245       = ipam.Ip4int(ipDot10), ipam.Ip4int(ipDot245)
+)
+
+func TestInvariants(t *testing.T) {
+	ring := New(ipStart, ipEnd, peer1name)
+
+	// Check ring is sorted
+	ring.Entries = []entry{{dot245, peer1name, 0, 0}, {dot10, peer2name, 0, 0}}
+	wt.AssertTrue(t, ring.checkInvariants() == ErrNotSorted, "Expected error")
+
+	// Check tokens don't appear twice
+	ring.Entries = []entry{{dot245, peer1name, 0, 0}, {dot245, peer2name, 0, 0}}
+	wt.AssertTrue(t, ring.checkInvariants() == ErrTokenRepeated, "Expected error")
+
+	// Check tokens are in bounds
+	ring = New(ipDot10, ipDot245, peer1name)
+	ring.Entries = []entry{{start, peer1name, 0, 0}}
+	wt.AssertTrue(t, ring.checkInvariants() == ErrTokenOutOfRange, "Expected error")
+
+	ring.Entries = []entry{{end, peer1name, 0, 0}}
+	wt.AssertTrue(t, ring.checkInvariants() == ErrTokenOutOfRange, "Expected error")
+}
+
+
+func TestRing(t *testing.T) {
+	ring1 := New(ipStart, ipEnd, peer1name)
 	ring1.ClaimItAll()
 
-	ring2 := New(start, end, peer2name)
+	ring2 := New(ipStart, ipEnd, peer2name)
 	ring2.merge(ring1)
 
-	ring1.GrantRangeToHost(middle, end, peer2name)
+	ring1.GrantRangeToHost(ipDot10, ipEnd, peer2name)
+}
+
+func TestInsert(t *testing.T) {
+	ring := New(ipStart, ipEnd, peer1name)
+	ring.ClaimItAll()
+
+	wt.AssertPanic(t, func () {
+		ring.insertAt(0, entry{start, peer1name, 0, 0})
+	})
+
+	ring.insertAt(1, entry{dot245, peer1name, 0, 0})
+	ring2 := New(ipStart, ipEnd, peer1name)
+	ring2.Entries = []entry{{start, peer1name, 0, 0}, {dot245, peer1name, 0, 0}}
+	wt.AssertEquals(t, ring, ring2)
+
+	ring.insertAt(1, entry{dot10, peer1name, 0, 0})
+	ring2.Entries = []entry{{start, peer1name, 0, 0}, {dot10, peer1name, 0, 0}, {dot245, peer1name, 0, 0}}
+	wt.AssertEquals(t, ring, ring2)
 }
 
 func TestBetween(t *testing.T) {
-	var (
-		peer1name, _ = router.PeerNameFromString("00:00:00:00:00")
-		peer2name, _ = router.PeerNameFromString("00:00:00:00:00")
-		start, end   = net.ParseIP("10.0.0.0"), net.ParseIP("10.0.0.255")
-		plus10       = ipam.Ip4int(net.ParseIP("10.0.0.10"))
-		minus10      = ipam.Ip4int(net.ParseIP("10.0.0.245"))
-	)
-
-	ring1 := New(start, end, peer1name)
+	ring1 := New(ipStart, ipEnd, peer1name)
 	ring1.ClaimItAll()
 
 	// First off, in a ring where everything is owned by the peer
@@ -48,7 +83,7 @@ func TestBetween(t *testing.T) {
 	// Now, construct a ring with entries at +10 and -10
 	// And check the correct behaviour
 
-	ring1.Entries = []entry{{plus10, peer1name, 0, 0}, {minus10, peer2name, 0, 0}}
+	ring1.Entries = []entry{{dot10, peer1name, 0, 0}, {dot245, peer2name, 0, 0}}
 	ring1.assertInvariants()
 	for i := 10; i <= 244; i++ {
 		ipStr := fmt.Sprintf("10.0.0.%d", i)
@@ -74,33 +109,4 @@ func TestBetween(t *testing.T) {
 		wt.AssertTrue(t, ring1.between(ip, 1, 2),
 			fmt.Sprintf("Between should be true for %s!", ipStr))
 	}
-}
-
-func TestInvariants(t *testing.T) {
-	var (
-		peer1name, _        = router.PeerNameFromString("00:00:00:00:00")
-		peer2name, _        = router.PeerNameFromString("00:00:00:00:00")
-		startIP, endIP      = net.ParseIP("10.0.0.0"), net.ParseIP("10.0.0.255")
-		plus10ip, minus10ip = net.ParseIP("10.0.0.10"), net.ParseIP("10.0.0.245")
-		start, end          = ipam.Ip4int(startIP), ipam.Ip4int(endIP)
-		plus10, minus10     = ipam.Ip4int(plus10ip), ipam.Ip4int(minus10ip)
-	)
-
-	ring := New(startIP, endIP, peer1name)
-
-	// Check ring is sorted
-	ring.Entries = []entry{{minus10, peer1name, 0, 0}, {plus10, peer2name, 0, 0}}
-	wt.AssertTrue(t, ring.checkInvariants() == ErrNotSorted, "Expected error")
-
-	// Check tokens don't appear twice
-	ring.Entries = []entry{{minus10, peer1name, 0, 0}, {minus10, peer2name, 0, 0}}
-	wt.AssertTrue(t, ring.checkInvariants() == ErrTokenRepeated, "Expected error")
-
-	// Check tokens are in bounds
-	ring = New(plus10ip, minus10ip, peer1name)
-	ring.Entries = []entry{{start, peer1name, 0, 0}}
-	wt.AssertTrue(t, ring.checkInvariants() == ErrTokenOutOfRange, "Expected error")
-
-	ring.Entries = []entry{{end, peer1name, 0, 0}}
-	wt.AssertTrue(t, ring.checkInvariants() == ErrTokenOutOfRange, "Expected error")
 }

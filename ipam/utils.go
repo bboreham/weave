@@ -31,7 +31,7 @@ func Ip4int(ip4 net.IP) (r uint32) {
 	return
 }
 
-func intip4(key uint32) (r net.IP) {
+func Intip4(key uint32) (r net.IP) {
 	r = make([]byte, net.IPv4len)
 	for i := 3; i >= 0; i-- {
 		r[i] = byte(key)
@@ -43,7 +43,7 @@ func intip4(key uint32) (r net.IP) {
 // IPv4 Address Arithmetic - convert to 32-bit unsigned integer, add, and convert back
 func add(addr net.IP, i uint32) net.IP {
 	sum := Ip4int(addr) + i
-	return intip4(sum)
+	return Intip4(sum)
 }
 
 func subtract(a, b net.IP) int64 {
