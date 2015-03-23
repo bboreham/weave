@@ -15,9 +15,11 @@ var (
 
 	ipStart, ipEnd    = net.ParseIP("10.0.0.0"), net.ParseIP("10.0.0.255")
 	ipDot10, ipDot245 = net.ParseIP("10.0.0.10"), net.ParseIP("10.0.0.245")
+	ipMiddle          = net.ParseIP("10.0.0.128")
 
 	start, end    = utils.Ip4int(ipStart), utils.Ip4int(ipEnd)
 	dot10, dot245 = utils.Ip4int(ipDot10), utils.Ip4int(ipDot245)
+	middle        = utils.Ip4int(ipMiddle)
 )
 
 func TestInvariants(t *testing.T) {
@@ -100,7 +102,7 @@ func TestBetween(t *testing.T) {
 	}
 }
 
-func TestRing(t *testing.T) {
+func TestGrantSimple(t *testing.T) {
 	ring1 := New(ipStart, ipEnd, peer1name)
 	ring2 := New(ipStart, ipEnd, peer2name)
 
@@ -117,5 +119,44 @@ func TestRing(t *testing.T) {
 	// Now spint back to peer 1
 	ring2.GrantRangeToHost(ipDot10, ipEnd, peer1name)
 	ring1.Entries = []entry{{start, peer2name, 0, 1}, {dot10, peer1name, 0, 0}}
+	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
+
+	// And spint back to peer 2 again
+	ring1.GrantRangeToHost(ipDot245, ipEnd, peer2name)
+	ring2.Entries = []entry{{start, peer2name, 0, 1}, {dot10, peer1name, 0, 0}, {dot245, peer2name, 0, 0}}
+	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
+}
+
+func TestGrantSplit(t *testing.T) {
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring2 := New(ipStart, ipEnd, peer2name)
+
+	// Claim everything for peer1
+	ring1.ClaimItAll()
+	ring2.Entries = []entry{{start, peer1name, 0, 0}}
+	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
+
+	// Now grant a split range to peer2
+	ring1.GrantRangeToHost(ipDot10, ipDot245, peer2name)
+	ring2.Entries = []entry{{start, peer1name, 0, 0}, {dot10, peer2name, 0, 0}, {dot245, peer1name, 0, 0}}
+	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
+}
+
+func TestMerge(t *testing.T) {
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring2 := New(ipStart, ipEnd, peer2name)
+
+	// Claim everything for peer1
+	ring1.ClaimItAll()
+	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer2name)
+	ring2.merge(ring1)
+	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
+
+	// Now to two different operations on either side,
+	// check we can merge again
+	ring1.GrantRangeToHost(ipStart, ipMiddle, peer2name)
+	ring2.GrantRangeToHost(ipMiddle, ipEnd, peer1name)
+	ring2.merge(ring1)
+	ring1.merge(ring2)
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 }
