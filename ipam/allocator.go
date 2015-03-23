@@ -13,6 +13,11 @@ const (
 	allocStateLeaderless
 )
 
+const (
+	msgSpaceRequest = iota
+	msgLeaderElected
+)
+
 type Allocator struct {
 	queryChan   chan<- interface{}
 	ourName     router.PeerName
@@ -62,4 +67,7 @@ func (alloc *Allocator) string() string {
 	}
 	buf.WriteString(fmt.Sprintf("Allocator state %s", state))
 	return buf.String()
+}
+
+func (alloc *Allocator) considerOurPosition() {
 }
