@@ -284,6 +284,7 @@ func (context *testContext) makeWeaves(n int, args ...string) {
 
 	// Make some connections (note Docker assumed to be running with --icc=true)
 	for i := 0; i < n-1; i++ {
+		lg.Info.Println("Connecting", context.conts[i].Name)
 		err := context.weaves[i].Connect(context.conts[i+1].NetworkSettings.IPAddress)
 		if err != nil {
 			cont, err := context.dc.InspectContainer(context.conts[i].ID)
@@ -292,11 +293,9 @@ func (context *testContext) makeWeaves(n int, args ...string) {
 			}
 		}
 		context.check(err, "connect")
-		time.Sleep(time.Duration(500*i*(i/5+1)) * time.Millisecond)
+		// Give the connections time to settle
+		time.Sleep(time.Duration(300*i*(i/10+1)) * time.Millisecond)
 	}
-
-	// Give the connections time to settle
-	time.Sleep(time.Duration(100*n) * time.Millisecond)
 }
 
 func (context *testContext) makeWeave(i int, args ...string) {
