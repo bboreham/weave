@@ -46,7 +46,6 @@ func httpVerb(verb string, url string) (string, error) {
 }
 
 func httpPost(url string, values url.Values) (string, error) {
-	fmt.Println("Url", url, "Values", values)
 	if resp, err := http.PostForm(url, values); err != nil {
 		return "", err
 	} else if resp.StatusCode != http.StatusOK {
@@ -63,7 +62,7 @@ func NewClient(addr string) *Client {
 }
 
 func (client *Client) Connect(remote string) error {
-	_, err := httpGet(client.baseUrl + "/connect?peer=" + remote)
+	_, err := httpPost(client.baseUrl+"/connect", url.Values{"peer": {remote}})
 	return err
 }
 
