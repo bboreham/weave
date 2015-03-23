@@ -23,7 +23,7 @@ func panicOnError(err error) {
 	}
 }
 
-func ip4int(ip4 net.IP) (r uint32) {
+func Ip4int(ip4 net.IP) (r uint32) {
 	for _, b := range ip4.To4() {
 		r <<= 8
 		r |= uint32(b)
@@ -42,10 +42,10 @@ func intip4(key uint32) (r net.IP) {
 
 // IPv4 Address Arithmetic - convert to 32-bit unsigned integer, add, and convert back
 func add(addr net.IP, i uint32) net.IP {
-	sum := ip4int(addr) + i
+	sum := Ip4int(addr) + i
 	return intip4(sum)
 }
 
 func subtract(a, b net.IP) int64 {
-	return int64(ip4int(a)) - int64(ip4int(b))
+	return int64(Ip4int(a)) - int64(Ip4int(b))
 }
