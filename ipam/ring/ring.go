@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
-	"github.com/zettio/weave/ipam"
+	"github.com/zettio/weave/ipam/utils"
 	"github.com/zettio/weave/router"
 	"net"
 	"sort"
@@ -98,7 +98,7 @@ func (r *Ring) insertAt(i int, e entry) {
 
 // New creates an empty ring belonging to peer.
 func New(startIP, endIP net.IP, peer router.PeerName) Ring {
-	start, end := ipam.Ip4int(startIP), ipam.Ip4int(endIP)
+	start, end := utils.Ip4int(startIP), utils.Ip4int(endIP)
 	assert(start <= end, "Start needs to be less than end!")
 
 	return Ring{start, end, peer, make([]entry, 0)}
@@ -137,7 +137,7 @@ func (r *Ring) between(token uint32, i, j int) bool {
 func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	r.assertInvariants()
 
-	start, end := ipam.Ip4int(startIP), ipam.Ip4int(endIP)
+	start, end := utils.Ip4int(startIP), utils.Ip4int(endIP)
 	assert(r.Start <= start && start <= r.End, "Trying to grant range outside of subnet")
 	assert(r.Start <= end && end <= r.End, "Trying to grant range outside of subnet")
 	assert(len(r.Entries) > 0, "Cannot grant if ring is empty!")

@@ -1,6 +1,8 @@
 package ipam
 
 import (
+	"fmt"
+	lg "github.com/zettio/weave/common"
 	"github.com/zettio/weave/router"
 	"net"
 )
@@ -171,4 +173,14 @@ func (alloc *Allocator) queryLoop(queryChan <-chan interface{}, withTimers bool)
 			}
 		}
 	}
+}
+
+func (alloc *Allocator) Errorln(args ...interface{}) {
+	lg.Error.Println(append([]interface{}{fmt.Sprintf("[allocator %s]:", alloc.ourName)}, args...)...)
+}
+func (alloc *Allocator) Infof(fmt string, args ...interface{}) {
+	lg.Info.Printf("[allocator %s] "+fmt, append([]interface{}{alloc.ourName}, args...)...)
+}
+func (alloc *Allocator) Debugln(args ...interface{}) {
+	lg.Debug.Println(append([]interface{}{fmt.Sprintf("[allocator %s]:", alloc.ourName)}, args...)...)
 }
