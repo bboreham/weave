@@ -7,11 +7,11 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
+	"fmt"
 	"github.com/zettio/weave/ipam/utils"
 	"github.com/zettio/weave/router"
 	"net"
 	"sort"
-	"fmt"
 )
 
 type entry struct {
@@ -332,7 +332,7 @@ func (r *Ring) ClaimItAll() {
 func (r *Ring) String() string {
 	var buffer bytes.Buffer
 	for _, entry := range r.Entries {
-		fmt.Fprintf(&buffer, "%s -> %s (%d, %d)\n", ipam.Intip4(entry.Token),
+		fmt.Fprintf(&buffer, "%s -> %s (%d, %d)\n", utils.Intip4(entry.Token),
 			entry.Peer, entry.Tombstone, entry.Version)
 	}
 	return buffer.String()

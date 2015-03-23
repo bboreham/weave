@@ -2,7 +2,7 @@ package ring
 
 import (
 	"fmt"
-	"github.com/zettio/weave/ipam"
+	"github.com/zettio/weave/ipam/utils"
 	"github.com/zettio/weave/router"
 	wt "github.com/zettio/weave/testing"
 	"net"
@@ -10,14 +10,14 @@ import (
 )
 
 var (
-	peer1name, _        = router.PeerNameFromString("00:00:00:00:00")
-	peer2name, _        = router.PeerNameFromString("00:00:00:00:00")
+	peer1name, _ = router.PeerNameFromString("00:00:00:00:00")
+	peer2name, _ = router.PeerNameFromString("00:00:00:00:00")
 
-	ipStart, ipEnd      = net.ParseIP("10.0.0.0"), net.ParseIP("10.0.0.255")
-	ipDot10, ipDot245   = net.ParseIP("10.0.0.10"), net.ParseIP("10.0.0.245")
+	ipStart, ipEnd    = net.ParseIP("10.0.0.0"), net.ParseIP("10.0.0.255")
+	ipDot10, ipDot245 = net.ParseIP("10.0.0.10"), net.ParseIP("10.0.0.245")
 
-	start, end          = ipam.Ip4int(ipStart), ipam.Ip4int(ipEnd)
-	dot10, dot245       = ipam.Ip4int(ipDot10), ipam.Ip4int(ipDot245)
+	start, end    = utils.Ip4int(ipStart), utils.Ip4int(ipEnd)
+	dot10, dot245 = utils.Ip4int(ipDot10), utils.Ip4int(ipDot245)
 )
 
 func TestInvariants(t *testing.T) {
@@ -40,7 +40,6 @@ func TestInvariants(t *testing.T) {
 	wt.AssertTrue(t, ring.checkInvariants() == ErrTokenOutOfRange, "Expected error")
 }
 
-
 func TestRing(t *testing.T) {
 	ring1 := New(ipStart, ipEnd, peer1name)
 	ring1.ClaimItAll()
@@ -55,7 +54,7 @@ func TestInsert(t *testing.T) {
 	ring := New(ipStart, ipEnd, peer1name)
 	ring.ClaimItAll()
 
-	wt.AssertPanic(t, func () {
+	wt.AssertPanic(t, func() {
 		ring.insertAt(0, entry{start, peer1name, 0, 0})
 	})
 
@@ -76,7 +75,7 @@ func TestBetween(t *testing.T) {
 	// First off, in a ring where everything is owned by the peer
 	// between should return true for everything
 	for i := 1; i <= 255; i++ {
-		ip := ipam.Ip4int(net.ParseIP(fmt.Sprintf("10.0.0.%d", i)))
+		ip := utils.Ip4int(net.ParseIP(fmt.Sprintf("10.0.0.%d", i)))
 		wt.AssertTrue(t, ring1.between(ip, 0, 1), "between should be true!")
 	}
 
@@ -87,7 +86,7 @@ func TestBetween(t *testing.T) {
 	ring1.assertInvariants()
 	for i := 10; i <= 244; i++ {
 		ipStr := fmt.Sprintf("10.0.0.%d", i)
-		ip := ipam.Ip4int(net.ParseIP(ipStr))
+		ip := utils.Ip4int(net.ParseIP(ipStr))
 		wt.AssertTrue(t, ring1.between(ip, 0, 1),
 			fmt.Sprintf("Between should be true for %s!", ipStr))
 		wt.AssertFalse(t, ring1.between(ip, 1, 2),
@@ -95,7 +94,7 @@ func TestBetween(t *testing.T) {
 	}
 	for i := 0; i <= 9; i++ {
 		ipStr := fmt.Sprintf("10.0.0.%d", i)
-		ip := ipam.Ip4int(net.ParseIP(ipStr))
+		ip := utils.Ip4int(net.ParseIP(ipStr))
 		wt.AssertFalse(t, ring1.between(ip, 0, 1),
 			fmt.Sprintf("Between should be false for %s!", ipStr))
 		wt.AssertTrue(t, ring1.between(ip, 1, 2),
@@ -103,7 +102,7 @@ func TestBetween(t *testing.T) {
 	}
 	for i := 245; i <= 255; i++ {
 		ipStr := fmt.Sprintf("10.0.0.%d", i)
-		ip := ipam.Ip4int(net.ParseIP(ipStr))
+		ip := utils.Ip4int(net.ParseIP(ipStr))
 		wt.AssertFalse(t, ring1.between(ip, 0, 1),
 			fmt.Sprintf("Between should be false for %s!", ipStr))
 		wt.AssertTrue(t, ring1.between(ip, 1, 2),
