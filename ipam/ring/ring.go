@@ -13,8 +13,8 @@ import (
 	"fmt"
 	"github.com/zettio/weave/ipam/utils"
 	"github.com/zettio/weave/router"
-	"net"
 	"math/rand"
+	"net"
 	"sort"
 )
 
@@ -23,7 +23,7 @@ type entry struct {
 	Peer      router.PeerName // Who owns this range
 	Tombstone uint32          // Timestamp when this entry was tombstone; 0 means live
 	Version   uint32          // Version of this range
-	Free      uint32 // Number of free IPs in this range
+	Free      uint32          // Number of free IPs in this range
 }
 
 func (e1 *entry) Equal(e2 *entry) bool {
@@ -178,7 +178,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		previous := r.Entries[j%len(r.Entries)]
 		assert(previous.Peer == r.Peername, "Trying to mutate range I don't own")
 
-		r.insertAt(i, entry{Token:start, Peer:peer})
+		r.insertAt(i, entry{Token: start, Peer: peer})
 	}
 
 	r.assertInvariants()
@@ -204,7 +204,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		return
 	} else {
 		assert(r.between(end, i, k), "End spans another token")
-		r.insertAt(k, entry{Token:end, Peer:r.Peername})
+		r.insertAt(k, entry{Token: end, Peer: r.Peername})
 		r.assertInvariants()
 	}
 }
@@ -347,7 +347,7 @@ func (r *Ring) Empty() bool {
 func (r *Ring) ClaimItAll() {
 	assert(len(r.Entries) == 0, "Cannot bootstrap ring with entries in it!")
 
-	r.insertAt(0, entry{Token:r.Start, Peer:r.Peername})
+	r.insertAt(0, entry{Token: r.Start, Peer: r.Peername})
 
 	r.assertInvariants()
 }
@@ -403,7 +403,10 @@ func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
 	}
 
 	// Construct average free space per range per peer
-	type choice struct { peer router.PeerName; weight int }
+	type choice struct {
+		peer   router.PeerName
+		weight int
+	}
 	sum := 0
 	choices := make([]choice, len(totalSpacePerPeer))
 	i := 0
