@@ -24,6 +24,10 @@ type Gossip interface {
 	GossipBroadcast(buf []byte) error
 }
 
+type Leadership interface {
+	LeaderElect() PeerName
+}
+
 type Gossiper interface {
 	OnGossipUnicast(sender PeerName, msg []byte) error
 	OnGossipBroadcast(msg []byte) error
@@ -217,6 +221,16 @@ func (c *GossipChannel) GossipUnicast(dstPeerName PeerName, buf []byte) error {
 
 func (c *GossipChannel) GossipBroadcast(buf []byte) error {
 	return c.relayGossipBroadcast(c.ourself.Name, GobEncode(c.hash, c.ourself.Name, buf))
+}
+
+func (c *GossipChannel) LeaderElect() PeerName {
+	highest := PeerName(0)
+	c.ourself.Router.Peers.ForEach(func(name PeerName, _ *Peer) {
+		if highest < name {
+			highest = name
+		}
+	})
+	return highest
 }
 
 func (c *GossipChannel) relayGossipUnicast(dstPeerName PeerName, msg []byte) error {
