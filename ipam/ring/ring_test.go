@@ -52,11 +52,11 @@ func TestInsert(t *testing.T) {
 
 	ring.insertAt(1, entry{Token: dot245, Peer: peer1name})
 	ring2 := New(ipStart, ipEnd, peer1name)
-	ring2.Entries = []entry{{Token: start, Peer: peer1name}, {Token: dot245, Peer: peer1name}}
+	ring2.Entries = []entry{{Token: start, Peer: peer1name, Free:255}, {Token: dot245, Peer: peer1name}}
 	wt.AssertEquals(t, ring, ring2)
 
 	ring.insertAt(1, entry{Token: dot10, Peer: peer1name})
-	ring2.Entries = []entry{{Token: start, Peer: peer1name}, {Token: dot10, Peer: peer1name}, {Token: dot245, Peer: peer1name}}
+	ring2.Entries = []entry{{Token: start, Peer: peer1name, Free:255}, {Token: dot10, Peer: peer1name}, {Token: dot245, Peer: peer1name}}
 	wt.AssertEquals(t, ring, ring2)
 }
 
@@ -108,22 +108,22 @@ func TestGrantSimple(t *testing.T) {
 
 	// Claim everything for peer1
 	ring1.ClaimItAll()
-	ring2.Entries = []entry{{Token: start, Peer: peer1name}}
+	ring2.Entries = []entry{{Token: start, Peer: peer1name, Free:255}}
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 
 	// Now grant everything to peer2
 	ring1.GrantRangeToHost(ipStart, ipEnd, peer2name)
-	ring2.Entries = []entry{{Token: start, Peer: peer2name, Version: 1}}
+	ring2.Entries = []entry{{Token: start, Peer: peer2name, Version: 1, Free:255}}
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 
 	// Now spint back to peer 1
 	ring2.GrantRangeToHost(ipDot10, ipEnd, peer1name)
-	ring1.Entries = []entry{{Token: start, Peer: peer2name, Version: 1}, {Token: dot10, Peer: peer1name}}
+	ring1.Entries = []entry{{Token: start, Peer: peer2name, Version: 1, Free:255}, {Token: dot10, Peer: peer1name}}
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 
 	// And spint back to peer 2 again
 	ring1.GrantRangeToHost(ipDot245, ipEnd, peer2name)
-	ring2.Entries = []entry{{Token: start, Peer: peer2name, Version: 1}, {Token: dot10, Peer: peer1name}, {Token: dot245, Peer: peer2name}}
+	ring2.Entries = []entry{{Token: start, Peer: peer2name, Version: 1, Free:255}, {Token: dot10, Peer: peer1name}, {Token: dot245, Peer: peer2name}}
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 }
 
@@ -133,12 +133,12 @@ func TestGrantSplit(t *testing.T) {
 
 	// Claim everything for peer1
 	ring1.ClaimItAll()
-	ring2.Entries = []entry{{Token: start, Peer: peer1name}}
+	ring2.Entries = []entry{{Token: start, Peer: peer1name, Free:255}}
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 
 	// Now grant a split range to peer2
 	ring1.GrantRangeToHost(ipDot10, ipDot245, peer2name)
-	ring2.Entries = []entry{{Token: start, Peer: peer1name}, {Token: dot10, Peer: peer2name}, {Token: dot245, Peer: peer1name}}
+	ring2.Entries = []entry{{Token: start, Peer: peer1name, Free:255}, {Token: dot10, Peer: peer2name}, {Token: dot245, Peer: peer1name}}
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 }
 
@@ -158,7 +158,7 @@ func TestMergeSimple(t *testing.T) {
 	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer2name)
 	AssertSuccess(t, ring2.merge(*ring1))
 
-	ring3.Entries = []entry{{Token: start, Peer: peer1name}, {Token: middle, Peer: peer2name}}
+	ring3.Entries = []entry{{Token: start, Peer: peer1name, Free:255}, {Token: middle, Peer: peer2name}}
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 	wt.AssertEquals(t, ring1.Entries, ring3.Entries)
 
@@ -170,7 +170,7 @@ func TestMergeSimple(t *testing.T) {
 	AssertSuccess(t, ring2.merge(*ring1))
 	AssertSuccess(t, ring1.merge(*ring2))
 
-	ring3.Entries = []entry{{Token: start, Peer: peer2name, Version: 1}, {Token: middle, Peer: peer1name, Version: 1}}
+	ring3.Entries = []entry{{Token: start, Peer: peer2name, Version: 1, Free:255}, {Token: middle, Peer: peer1name, Version: 1}}
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 	wt.AssertEquals(t, ring1.Entries, ring3.Entries)
 }
@@ -219,37 +219,37 @@ func TestMergeMore(t *testing.T) {
 
 	// Claim everything for peer1
 	ring1.ClaimItAll()
-	assertRing(ring1, []entry{{Token: start, Peer: peer1name}})
+	assertRing(ring1, []entry{{Token: start, Peer: peer1name, Free:255}})
 	assertRing(ring2, []entry{})
 
 	// Check the merge sends it to the other ring
 	AssertSuccess(t, ring2.merge(*ring1))
-	assertRing(ring1, []entry{{Token: start, Peer: peer1name}})
-	assertRing(ring2, []entry{{Token: start, Peer: peer1name}})
+	assertRing(ring1, []entry{{Token: start, Peer: peer1name, Free:255}})
+	assertRing(ring2, []entry{{Token: start, Peer: peer1name, Free:255}})
 
 	// Give everything to peer2
 	ring1.GrantRangeToHost(ipStart, ipEnd, peer2name)
-	assertRing(ring1, []entry{{Token: start, Peer: peer2name, Version: 1}})
-	assertRing(ring2, []entry{{Token: start, Peer: peer1name}})
+	assertRing(ring1, []entry{{Token: start, Peer: peer2name, Version: 1, Free:255}})
+	assertRing(ring2, []entry{{Token: start, Peer: peer1name, Free:255}})
 
 	AssertSuccess(t, ring2.merge(*ring1))
-	assertRing(ring1, []entry{{Token: start, Peer: peer2name, Version: 1}})
-	assertRing(ring2, []entry{{Token: start, Peer: peer2name, Version: 1}})
+	assertRing(ring1, []entry{{Token: start, Peer: peer2name, Version: 1, Free:255}})
+	assertRing(ring2, []entry{{Token: start, Peer: peer2name, Version: 1, Free:255}})
 
 	// And carve off some space
 	ring2.GrantRangeToHost(ipMiddle, ipEnd, peer1name)
-	assertRing(ring1, []entry{{Token: start, Peer: peer2name, Version: 1}})
-	assertRing(ring2, []entry{{Token: start, Peer: peer2name, Version: 1}, {Token: middle, Peer: peer1name}})
+	assertRing(ring1, []entry{{Token: start, Peer: peer2name, Version: 1, Free:255}})
+	assertRing(ring2, []entry{{Token: start, Peer: peer2name, Version: 1, Free:255}, {Token: middle, Peer: peer1name}})
 
 	// And merge back
 	AssertSuccess(t, ring1.merge(*ring2))
-	assertRing(ring1, []entry{{Token: start, Peer: peer2name, Version: 1}, {Token: middle, Peer: peer1name}})
-	assertRing(ring2, []entry{{Token: start, Peer: peer2name, Version: 1}, {Token: middle, Peer: peer1name}})
+	assertRing(ring1, []entry{{Token: start, Peer: peer2name, Version: 1, Free:255}, {Token: middle, Peer: peer1name}})
+	assertRing(ring2, []entry{{Token: start, Peer: peer2name, Version: 1, Free:255}, {Token: middle, Peer: peer1name}})
 
 	// This should be a no-op
 	AssertSuccess(t, ring2.merge(*ring1))
-	assertRing(ring1, []entry{{Token: start, Peer: peer2name, Version: 1}, {Token: middle, Peer: peer1name}})
-	assertRing(ring2, []entry{{Token: start, Peer: peer2name, Version: 1}, {Token: middle, Peer: peer1name}})
+	assertRing(ring1, []entry{{Token: start, Peer: peer2name, Version: 1, Free:255}, {Token: middle, Peer: peer1name}})
+	assertRing(ring2, []entry{{Token: start, Peer: peer2name, Version: 1, Free:255}, {Token: middle, Peer: peer1name}})
 }
 
 // A simple test, very similar to above, but using the marshalling to byte[]s
@@ -268,13 +268,13 @@ func TestGossip(t *testing.T) {
 
 	// Claim everything for peer1
 	ring1.ClaimItAll()
-	assertRing(ring1, []entry{{Token: start, Peer: peer1name}})
+	assertRing(ring1, []entry{{Token: start, Peer: peer1name, Free:255}})
 	assertRing(ring2, []entry{})
 
 	// Check the merge sends it to the other ring
 	AssertSuccess(t, ring2.OnGossipBroadcast(ring1.GossipState()))
-	assertRing(ring1, []entry{{Token: start, Peer: peer1name}})
-	assertRing(ring2, []entry{{Token: start, Peer: peer1name}})
+	assertRing(ring1, []entry{{Token: start, Peer: peer1name, Free:255}})
+	assertRing(ring2, []entry{{Token: start, Peer: peer1name, Free:255}})
 }
 
 func TestFindFree(t *testing.T) {
