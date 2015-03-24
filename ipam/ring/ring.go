@@ -282,28 +282,59 @@ func (r *Ring) merge(gossip Ring) error {
 		currentOwner = last(gossip.Entries).Peer
 	}
 
-	for k := range result {
-		switch {
-		case i >= len(r.Entries) || r.Entries[i].Token > gossip.Entries[j].Token:
-			// A new token it getting inserted
-			if currentOwner == r.Peername {
-				return ErrEntryInMyRange
-			}
-			result[k] = gossip.Entries[j]
-			j++
+	// Consumes an entry from the gossiped ring
+	// and puts it in out ring at k
+	consumeGossip := func(k int) error {
+		if currentOwner == r.Peername {
+			return ErrEntryInMyRange
+		}
+		result[k] = gossip.Entries[j]
+		j++
+		return nil
+	}
 
-		case j >= len(gossip.Entries) || r.Entries[i].Token < gossip.Entries[j].Token:
-			result[k] = r.Entries[i]
-			i++
+	// Consumes an entry from our local state
+	consumeLocal := func(k int) {
+		result[k] = r.Entries[i]
+		i++
+	}
+
+	// Merges an entry from the gossiped ring
+	// with our state
+	consumeBoth := func(k int) error {
+		if entry, err := mergeEntry(r.Entries[i], gossip.Entries[j]); err != nil {
+			return err
+		} else {
+			result[k] = entry
+		}
+		i++
+		j++
+		return nil
+	}
+
+	for k := range result {
+		// Ordering of cases is important here!
+		switch {
+		case i >= len(r.Entries):
+			if err := consumeGossip(k); err != nil {
+				return err
+			}
+
+		case j >= len(gossip.Entries):
+			consumeLocal(k)
+
+		case r.Entries[i].Token > gossip.Entries[j].Token:
+			if err := consumeGossip(k); err != nil {
+				return err
+			}
+
+		case r.Entries[i].Token < gossip.Entries[j].Token:
+			consumeLocal(k)
 
 		case r.Entries[i].Token == gossip.Entries[j].Token:
-			if entry, err := mergeEntry(r.Entries[i], gossip.Entries[j]); err != nil {
+			if err := consumeBoth(k); err != nil {
 				return err
-			} else {
-				result[k] = entry
 			}
-			i++
-			j++
 		}
 		currentOwner = result[k].Peer
 	}
@@ -346,7 +377,7 @@ func (r *Ring) Empty() bool {
 func (r *Ring) ClaimItAll() {
 	utils.Assert(len(r.Entries) == 0, "Cannot bootstrap ring with entries in it!")
 
-	r.insertAt(0, entry{Token: r.Start, Peer: r.Peername, Free:r.End - r.Start})
+	r.insertAt(0, entry{Token: r.Start, Peer: r.Peername, Free: r.End - r.Start})
 
 	r.assertInvariants()
 }
