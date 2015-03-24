@@ -35,6 +35,10 @@ func NewSpaceSet(pn router.PeerName, uid uint64) *SpaceSet {
 	return &SpaceSet{}
 }
 
+func (s *SpaceSet) Add(start net.IP, size uint32) {
+	s.AddSpace(NewSpace(start, size))
+}
+
 func (s *SpaceSet) AddSpace(newspace *Space) {
 	// See if we can merge this space with an existing space
 	for _, space := range s.spaces {

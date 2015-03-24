@@ -336,6 +336,10 @@ func (r *Ring) GossipState() []byte {
 	return buf.Bytes()
 }
 
+func (r *Ring) Empty() bool {
+	return len(r.Entries) == 0
+}
+
 // Claim entire ring.  Only works for empty rings.
 func (r *Ring) ClaimItAll() {
 	assert(len(r.Entries) == 0, "Cannot bootstrap ring with entries in it!")

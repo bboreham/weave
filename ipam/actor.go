@@ -161,7 +161,14 @@ func (alloc *Allocator) queryLoop(queryChan <-chan interface{}, withTimers bool)
 			case claim:
 			case cancelClaim:
 			case getFor:
+				alloc.electLeaderIfNecessary()
+				if addrs, found := alloc.owned[q.Ident]; found && len(addrs) > 0 {
+					q.resultChan <- addrs[0] // currently not supporting multiple allocations in the same subnet
+				} else if !alloc.tryAllocateFor(q.Ident, q.resultChan) {
+					alloc.pending = append(alloc.pending, getFor{q.resultChan, q.Ident})
+				}
 			case cancelGetFor:
+				alloc.handleCancelGetFor(q.Ident)
 			case deleteRecordsFor:
 			case free:
 			case gossipUnicast:
