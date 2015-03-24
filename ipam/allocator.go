@@ -140,7 +140,7 @@ func (alloc *Allocator) tryAllocateFor(ident string, resultChan chan<- net.IP) b
 		if donor, err := alloc.ring.ChoosePeerToAskForSpace(); err == nil {
 			alloc.Debugln("Decided to ask peer", donor, "for space")
 			alloc.sendRequest(donor, msgSpaceRequest)
-			return true
+			return false
 		}
 	}
 	return false
