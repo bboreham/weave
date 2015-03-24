@@ -298,3 +298,12 @@ func TestFindFree(t *testing.T) {
 	AssertSuccess(t, err)
 	wt.AssertEquals(t, peer, peer1name)
 }
+
+func TestMisc(t *testing.T) {
+	ring := New(ipStart, ipEnd, peer1name)
+
+	wt.AssertTrue(t, ring.Empty(), "empty")
+
+	ring.ClaimItAll()
+	println(ring.String())
+}
