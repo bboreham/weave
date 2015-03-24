@@ -12,15 +12,6 @@ type stop struct{}
 type makeString struct {
 	resultChan chan<- string
 }
-type claim struct {
-	resultChan chan<- error
-	Ident      string
-	IP         net.IP
-}
-type cancelClaim struct {
-	Ident string
-	IP    net.IP
-}
 type getFor struct {
 	resultChan chan<- net.IP
 	Ident      string
@@ -62,21 +53,6 @@ type gossipUpdate struct {
 // Sync.
 func (alloc *Allocator) Stop() {
 	alloc.queryChan <- stop{}
-}
-
-// Sync.
-// Claim an address that we think we should own
-func (alloc *Allocator) Claim(ident string, addr net.IP, cancelChan <-chan bool) error {
-	alloc.Infof("Address %s claimed by %s", addr, ident)
-	resultChan := make(chan error)
-	alloc.queryChan <- claim{resultChan, ident, addr}
-	select {
-	case result := <-resultChan:
-		return result
-	case <-cancelChan:
-		alloc.queryChan <- cancelClaim{ident, addr}
-		return nil
-	}
 }
 
 // Sync.
@@ -158,8 +134,6 @@ func (alloc *Allocator) queryLoop(queryChan <-chan interface{}, withTimers bool)
 				return
 			case makeString:
 				q.resultChan <- alloc.string()
-			case claim:
-			case cancelClaim:
 			case getFor:
 				alloc.electLeaderIfNecessary()
 				if addrs, found := alloc.owned[q.Ident]; found && len(addrs) > 0 {
