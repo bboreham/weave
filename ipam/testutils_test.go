@@ -147,7 +147,6 @@ func testAllocator(t *testing.T, name string, universeCIDR string) *Allocator {
 }
 
 func (alloc *Allocator) startForTesting() {
-	alloc.state = allocStateLeaderless
 	queryChan := make(chan interface{}, router.ChannelSize)
 	alloc.queryChan = queryChan
 	go alloc.queryLoop(queryChan, false)

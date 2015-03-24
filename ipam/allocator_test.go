@@ -81,7 +81,6 @@ func TestGossip2(t *testing.T) {
 	mockTime := new(mockTimeProvider)
 	mockTime.SetTime(baseTime)
 	alloc1.setTimeProvider(mockTime)
-	wt.AssertStatus(t, alloc1.state, allocStateLeaderless, "allocator state")
 
 	mockTime.SetTime(baseTime.Add(1 * time.Second))
 
@@ -94,7 +93,6 @@ func TestGossip2(t *testing.T) {
 
 	alloc1.OnGossipBroadcast(alloc2.EncodeState())
 	// At first, this peer has no space, so alloc1 should do nothing
-	wt.AssertStatus(t, alloc1.state, allocStateLeaderless, "allocator state")
 
 	mockTime.SetTime(baseTime.Add(3 * time.Second))
 	alloc1.considerOurPosition()
