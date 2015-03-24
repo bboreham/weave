@@ -224,7 +224,6 @@ func (client *TestGossipRouter) LeaderElect() router.PeerName {
 	return highest
 }
 
-
 type TestGossipRouterClient struct {
 	router *TestGossipRouter
 	sender router.PeerName
@@ -243,9 +242,15 @@ func (grouter *TestGossipRouter) connect(sender router.PeerName, gossiper router
 				}
 
 				if message.isUnicast {
-					gossiper.OnGossipUnicast(*message.sender, message.buf)
+					err := gossiper.OnGossipUnicast(*message.sender, message.buf)
+					if err != nil {
+						common.Error.Printf("Error doing gossip unicast to %s: %s", sender, err)
+					}
 				} else {
-					gossiper.OnGossipBroadcast(message.buf)
+					err := gossiper.OnGossipBroadcast(message.buf)
+					if err != nil {
+						common.Error.Printf("Error doing gossip broadcase to %s: %s", sender, err)
+					}
 				}
 			case <-gossipTimer:
 				grouter.GossipBroadcast(gossiper.Gossip().Encode())
@@ -262,7 +267,6 @@ func (client TestGossipRouterClient) LeaderElect() router.PeerName {
 }
 
 func (client TestGossipRouterClient) GossipUnicast(dstPeerName router.PeerName, buf []byte) error {
-	common.Debug.Printf("GossipUnicast from %s to %s", client.sender, dstPeerName)
 	select {
 	case client.router.gossipChans[dstPeerName] <- gossipMessage{true, &client.sender, buf}:
 	default: // drop the message if we cannot send it
@@ -271,7 +275,6 @@ func (client TestGossipRouterClient) GossipUnicast(dstPeerName router.PeerName, 
 }
 
 func (client TestGossipRouterClient) GossipBroadcast(buf []byte) error {
-	common.Debug.Printf("GossipBroadcast from %s", client.sender)
 	return client.router.GossipBroadcast(buf)
 }
 
