@@ -3,22 +3,19 @@ package ipam
 import (
 	"fmt"
 	"github.com/zettio/weave/common"
+	"github.com/zettio/weave/ipam/space"
 	"github.com/zettio/weave/router"
 	wt "github.com/zettio/weave/testing"
 	"math/rand"
+	"net"
 	"testing"
 	"time"
 )
 
 // Utility function to set up initial conditions for test
 func (alloc *Allocator) addSpace(startAddr string, length uint32) *Allocator {
-	// fixme
+	alloc.spaceSet.AddSpace(space.NewSpace(net.ParseIP(startAddr), length))
 	return alloc
-}
-
-func (alloc *Allocator) numFreeAddresses() uint32 {
-	// fixme
-	return 123456
 }
 
 // To allow time itself to be stubbed out for testing
@@ -104,6 +101,11 @@ func (m *mockGossipComms) GossipUnicast(dstPeerName router.PeerName, buf []byte)
 		m.messages = m.messages[1:]
 	}
 	return nil
+}
+
+func (m *mockGossipComms) LeaderElect() router.PeerName {
+	leader, _ := router.PeerNameFromString(m.name)
+	return leader
 }
 
 func ExpectMessage(alloc *Allocator, dst string, msgType byte, buf []byte) {

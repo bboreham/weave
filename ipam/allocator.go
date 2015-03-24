@@ -66,6 +66,8 @@ func NewAllocator(ourName router.PeerName, universeCIDR string) (*Allocator, err
 		universeSize:  universeSize,
 		universeLen:   ones,
 		ring:          ring.New(universeNet.IP, utils.Add(universeNet.IP, universeSize), ourName),
+		spaceSet:      space.NewSpaceSet(),
+		owned:         make(map[string][]net.IP),
 	}
 	return alloc, nil
 }
@@ -82,8 +84,9 @@ func (alloc *Allocator) Start() {
 
 func (alloc *Allocator) string() string {
 	var buf bytes.Buffer
-	buf.WriteString(fmt.Sprintf("Allocator"))
+	buf.WriteString(fmt.Sprintf("Allocator universe %s+%d\n", alloc.universeStart, alloc.universeSize))
 	buf.WriteString(alloc.ring.String())
+	buf.WriteString(alloc.spaceSet.String())
 	return buf.String()
 }
 
@@ -97,10 +100,10 @@ func (alloc *Allocator) electLeaderIfNecessary() {
 	leader := alloc.gossip.(router.Leadership).LeaderElect()
 	alloc.Debugln("Elected leader:", leader)
 	if leader == alloc.ourName {
-		alloc.Infof("I was elected leader of the universe %+v", alloc.ring)
 		// I'm the winner; take control of the whole universe
 		alloc.ring.ClaimItAll()
 		alloc.spaceSet.Add(alloc.universeStart, alloc.universeSize)
+		alloc.Infof("I was elected leader of the universe %s", alloc.string())
 	} else {
 		alloc.sendRequest(leader, msgLeaderElected)
 	}

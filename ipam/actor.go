@@ -144,7 +144,16 @@ func (alloc *Allocator) queryLoop(queryChan <-chan interface{}, withTimers bool)
 			case cancelGetFor:
 				alloc.handleCancelGetFor(q.Ident)
 			case deleteRecordsFor:
+				for _, ip := range alloc.owned[q.Ident] {
+					alloc.spaceSet.Free(ip)
+				}
+				delete(alloc.owned, q.Ident)
 			case free:
+				if alloc.removeOwned(q.Ident, q.IP) {
+					q.resultChan <- alloc.spaceSet.Free(q.IP)
+				} else {
+					q.resultChan <- fmt.Errorf("free: %s not owned by %s", q.IP, q.Ident)
+				}
 			case gossipUnicast:
 				switch q.bytes[0] {
 				}

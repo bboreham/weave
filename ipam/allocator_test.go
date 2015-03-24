@@ -50,23 +50,6 @@ func TestAllocFree(t *testing.T) {
 	alloc.String() // force sync-up after async call
 }
 
-func TestMultiSpaces(t *testing.T) {
-	alloc := testAllocator(t, "01:00:00:01:00:00", testStart1+"/30")
-	defer alloc.Stop()
-	alloc.addSpace(testStart1, 1)
-	alloc.addSpace(testStart2, 3)
-
-	wt.AssertEqualUint32(t, alloc.numFreeAddresses(), 4, "Total free addresses")
-
-	addr1 := alloc.GetFor("abcdef", nil)
-	wt.AssertEqualString(t, addr1.String(), testStart1, "address")
-
-	// First space should now be full and this address should come from second space
-	addr2 := alloc.GetFor("fedcba", nil)
-	wt.AssertEqualString(t, addr2.String(), testStart2, "address")
-	wt.AssertEqualUint32(t, alloc.numFreeAddresses(), 2, "Total free addresses")
-}
-
 // Test the election mechanism
 func TestGossip2(t *testing.T) {
 	const (
