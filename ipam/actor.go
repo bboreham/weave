@@ -175,9 +175,7 @@ func (alloc *Allocator) queryLoop(queryChan <-chan interface{}, withTimers bool)
 				q.resultChan <- alloc.ring.GossipState()
 			}
 		}
-		alloc.Debugln("queryLoop iteration completed")
 	}
-	alloc.Debugln("queryLoop finished")
 }
 
 func (alloc *Allocator) Errorln(args ...interface{}) {

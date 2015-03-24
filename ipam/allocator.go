@@ -98,8 +98,6 @@ func (alloc *Allocator) string() string {
 func (alloc *Allocator) checkPending() {
 	i := 0
 	for ; i < len(alloc.pending); i++ {
-		alloc.Debugln("Checking pending request for:", alloc.pending[i].Ident)
-		alloc.Debugln(alloc.string())
 		if !alloc.tryAllocateFor(alloc.pending[i].Ident, alloc.pending[i].resultChan) {
 			break
 		}
@@ -143,8 +141,6 @@ func (alloc *Allocator) tryAllocateFor(ident string, resultChan chan<- net.IP) b
 			alloc.Debugln("Decided to ask peer", donor, "for space")
 			alloc.sendRequest(donor, msgSpaceRequest)
 			return true
-		} else {
-			alloc.Debugln("ChoosePeerToAskForSpace error ", err)
 		}
 	}
 	return false
