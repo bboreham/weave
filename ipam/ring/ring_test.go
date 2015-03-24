@@ -316,3 +316,14 @@ func TestEmptyGossip(t *testing.T) {
 	// This used to panic, and it shouldn't
 	AssertSuccess(t, ring1.merge(*ring2))
 }
+
+func TestMergeOldMessage(t *testing.T) {
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring2 := New(ipStart, ipEnd, peer2name)
+
+	ring1.ClaimItAll()
+	AssertSuccess(t, ring2.merge(*ring1))
+
+	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer1name)
+	AssertSuccess(t, ring1.merge(*ring2))
+}
