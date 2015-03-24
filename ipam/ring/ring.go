@@ -349,8 +349,8 @@ func (r *Ring) ClaimItAll() {
 func (r *Ring) String() string {
 	var buffer bytes.Buffer
 	for _, entry := range r.Entries {
-		fmt.Fprintf(&buffer, "%s -> %s (%d, %d)\n", utils.Intip4(entry.Token),
-			entry.Peer, entry.Tombstone, entry.Version)
+		fmt.Fprintf(&buffer, "%s -> %s (%d, %d, %d)\n", utils.Intip4(entry.Token),
+			entry.Peer, entry.Tombstone, entry.Version, entry.Free)
 	}
 	return buffer.String()
 }
