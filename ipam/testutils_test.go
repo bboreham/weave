@@ -214,6 +214,17 @@ func (router *TestGossipRouter) GossipBroadcast(buf []byte) error {
 	return nil
 }
 
+func (client *TestGossipRouter) LeaderElect() router.PeerName {
+	var highest router.PeerName
+	for name := range client.gossipChans {
+		if highest < name {
+			highest = name
+		}
+	}
+	return highest
+}
+
+
 type TestGossipRouterClient struct {
 	router *TestGossipRouter
 	sender router.PeerName
@@ -244,6 +255,10 @@ func (grouter *TestGossipRouter) connect(sender router.PeerName, gossiper router
 
 	grouter.gossipChans[sender] = gossipChan
 	return TestGossipRouterClient{grouter, sender}
+}
+
+func (client TestGossipRouterClient) LeaderElect() router.PeerName {
+	return client.router.LeaderElect()
 }
 
 func (client TestGossipRouterClient) GossipUnicast(dstPeerName router.PeerName, buf []byte) error {
