@@ -37,3 +37,9 @@ func Add(addr net.IP, i uint32) net.IP {
 func Subtract(a, b net.IP) int64 {
 	return int64(Ip4int(a)) - int64(Ip4int(b))
 }
+
+func Assert(test bool, message string) {
+	if !test {
+		panic(message)
+	}
+}

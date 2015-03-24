@@ -44,12 +44,6 @@ type Ring struct {
 	Entries    entries         // list of entries sorted by token
 }
 
-func assert(test bool, message string) {
-	if !test {
-		panic(message)
-	}
-}
-
 func (r *Ring) assertInvariants() {
 	err := r.checkInvariants()
 	if err != nil {
@@ -115,7 +109,7 @@ func (r *Ring) insertAt(i int, e entry) {
 // New creates an empty ring belonging to peer.
 func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
 	start, end := utils.Ip4int(startIP), utils.Ip4int(endIP)
-	assert(start <= end, "Start needs to be less than end!")
+	utils.Assert(start <= end, "Start needs to be less than end!")
 
 	return &Ring{start, end, peer, make([]entry, 0)}
 }
@@ -124,7 +118,7 @@ func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
 // NB i and j can overflow and will wrap
 // NBB if entries[i].token == token, this will return true
 func (r *Ring) between(token uint32, i, j int) bool {
-	assert(i < j, "Start and end must be in order")
+	utils.Assert(i < j, "Start and end must be in order")
 
 	first := r.Entries[i%len(r.Entries)]
 	second := r.Entries[j%len(r.Entries)]
@@ -153,9 +147,9 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	r.assertInvariants()
 
 	start, end := utils.Ip4int(startIP), utils.Ip4int(endIP)
-	assert(r.Start <= start && start < r.End, "Trying to grant range outside of subnet")
-	assert(r.Start < end && end <= r.End, "Trying to grant range outside of subnet")
-	assert(len(r.Entries) > 0, "Cannot grant if ring is empty!")
+	utils.Assert(r.Start <= start && start < r.End, "Trying to grant range outside of subnet")
+	utils.Assert(r.Start < end && end <= r.End, "Trying to grant range outside of subnet")
+	utils.Assert(len(r.Entries) > 0, "Cannot grant if ring is empty!")
 
 	// Look for the start entry
 	i := sort.Search(len(r.Entries), func(j int) bool {
@@ -166,7 +160,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	// to change the token and update version
 	if i < len(r.Entries) && r.Entries[i].Token == start {
 		entry := &r.Entries[i]
-		assert(entry.Peer == r.Peername, "Trying to mutate entry I don't own")
+		utils.Assert(entry.Peer == r.Peername, "Trying to mutate entry I don't own")
 		entry.Peer = peer
 		entry.Tombstone = 0
 		entry.Version++
@@ -174,9 +168,9 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		// Otherwise, these isn't a token here, we need to
 		// find the preceeding token and check we own it (being careful for wrapping)
 		j := i - 1
-		assert(r.between(start, j, i), "??")
+		utils.Assert(r.between(start, j, i), "??")
 		previous := r.Entries[j%len(r.Entries)]
-		assert(previous.Peer == r.Peername, "Trying to mutate range I don't own")
+		utils.Assert(previous.Peer == r.Peername, "Trying to mutate range I don't own")
 
 		r.insertAt(i, entry{Token: start, Peer: peer})
 	}
@@ -203,7 +197,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		// That was easy
 		return
 	} else {
-		assert(r.between(end, i, k), "End spans another token")
+		utils.Assert(r.between(end, i, k), "End spans another token")
 		r.insertAt(k, entry{Token: end, Peer: r.Peername})
 		r.assertInvariants()
 	}
@@ -245,7 +239,7 @@ func (r *Ring) merge(gossip Ring) error {
 
 	// mergeEntry merges two entries with the same token
 	mergeEntry := func(existingEntry, newEntry entry) (entry, error) {
-		assert(existingEntry.Token == newEntry.Token, "WTF")
+		utils.Assert(existingEntry.Token == newEntry.Token, "WTF")
 		switch {
 		case existingEntry.Version == newEntry.Version:
 			if !existingEntry.Equal(&newEntry) {
@@ -308,7 +302,7 @@ func (r *Ring) merge(gossip Ring) error {
 		}
 		currentOwner = result[k].Peer
 	}
-	assert(i == len(r.Entries) && j == len(gossip.Entries), "WTF")
+	utils.Assert(i == len(r.Entries) && j == len(gossip.Entries), "WTF")
 
 	r.Entries = result
 	r.assertInvariants()
@@ -345,7 +339,7 @@ func (r *Ring) Empty() bool {
 
 // Claim entire ring.  Only works for empty rings.
 func (r *Ring) ClaimItAll() {
-	assert(len(r.Entries) == 0, "Cannot bootstrap ring with entries in it!")
+	utils.Assert(len(r.Entries) == 0, "Cannot bootstrap ring with entries in it!")
 
 	r.insertAt(0, entry{Token: r.Start, Peer: r.Peername})
 
@@ -362,14 +356,14 @@ func (r *Ring) String() string {
 }
 
 func (r *Ring) ReportFree(startIP net.IP, free uint32) {
-	start = utils.Ip4int(startIP)
+	start := utils.Ip4int(startIP)
 
 	// Look for entry
 	i := sort.Search(len(r.Entries), func(j int) bool {
 		return r.Entries[j].Token >= start
 	})
 
-	assert(i < len(r.Entries) && r.Entries[i].Token == start &&
+	utils.Assert(i < len(r.Entries) && r.Entries[i].Token == start &&
 		r.Entries[i].Peer == r.Peername, "Trying to report free on space I don't own")
 
 	r.Entries[i].Free = free
@@ -395,7 +389,7 @@ func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
 		}
 	}
 
-	assert(len(totalSpacePerPeer) == len(numRangesPerPeer), "WFT")
+	utils.Assert(len(totalSpacePerPeer) == len(numRangesPerPeer), "WFT")
 
 	if len(totalSpacePerPeer) <= 0 {
 		err = ErrNoFreeSpace
