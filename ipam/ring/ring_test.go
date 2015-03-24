@@ -142,21 +142,63 @@ func TestGrantSplit(t *testing.T) {
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 }
 
-func TestMerge(t *testing.T) {
+func AssertSuccess(t *testing.T, err error) {
+	if err != nil {
+		wt.Fatalf(t, "Expected success, got '%s'", err.Error())
+	}
+}
+
+func TestMergeSimple(t *testing.T) {
 	ring1 := New(ipStart, ipEnd, peer1name)
 	ring2 := New(ipStart, ipEnd, peer2name)
+	ring3 := New(ipStart, ipEnd, peer2name)
 
 	// Claim everything for peer1
 	ring1.ClaimItAll()
 	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer2name)
-	ring2.merge(ring1)
+	AssertSuccess(t, ring2.merge(ring1))
+
+	ring3.Entries = []entry{{start, peer1name, 0, 0}, {middle, peer2name, 0, 0}}
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
+	wt.AssertEquals(t, ring1.Entries, ring3.Entries)
 
 	// Now to two different operations on either side,
 	// check we can merge again
 	ring1.GrantRangeToHost(ipStart, ipMiddle, peer2name)
 	ring2.GrantRangeToHost(ipMiddle, ipEnd, peer1name)
-	ring2.merge(ring1)
-	ring1.merge(ring2)
+	AssertSuccess(t, ring2.merge(ring1))
+	AssertSuccess(t, ring1.merge(ring2))
+
+	ring3.Entries = []entry{{start, peer2name, 0, 1}, {middle, peer1name, 0, 1}}
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
+	wt.AssertEquals(t, ring1.Entries, ring3 .Entries)
+}
+
+func TestMergeErrors(t *testing.T) {
+	// Cannot merge in an invalid ring
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring2 := New(ipStart, ipEnd, peer2name)
+	ring2.Entries = []entry{{middle, peer2name, 0, 0}, {start, peer2name, 0, 0}}
+	wt.AssertTrue(t, ring1.merge(ring2) == ErrNotSorted, "Expected ErrNotSorted")
+
+	// Should merge two rings for different ranges
+	ring2 = New(ipStart, ipMiddle, peer2name)
+	ring2.Entries = []entry{}
+	wt.AssertTrue(t, ring1.merge(ring2) == ErrDifferentSubnets, "Expected ErrDifferentSubnets")
+
+	// Cannot merge newer version of entry I own
+	ring2 = New(ipStart, ipEnd, peer2name)
+	ring1.Entries = []entry{{start, peer1name, 0, 0}}
+	ring2.Entries = []entry{{start, peer1name, 0, 1}}
+	wt.AssertTrue(t, ring1.merge(ring2) == ErrNewerVersion, "Expected ErrNewerVersion")
+
+	// Cannot merge two entries with same version but different hosts
+	ring1.Entries = []entry{{start, peer1name, 0, 0}}
+	ring2.Entries = []entry{{start, peer2name, 0, 0}}
+	wt.AssertTrue(t, ring1.merge(ring2) == ErrInvalidEntry, "Expected ErrInvalidEntry")
+
+	// Cannot merge an entry into a range I own
+	ring1.Entries = []entry{{start, peer1name, 0, 0}}
+	ring2.Entries = []entry{{middle, peer2name, 0, 0}}
+	wt.AssertTrue(t, ring1.merge(ring2) == ErrEntryInMyRange, "Expected ErrEntryInMyRange")
 }
