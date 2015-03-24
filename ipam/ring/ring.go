@@ -217,6 +217,11 @@ func (r *Ring) merge(gossip Ring) error {
 		return ErrDifferentSubnets
 	}
 
+	// Special case gossip ring being empty - not much to do...
+	if len(gossip.Entries) == 0 {
+		return nil
+	}
+
 	// We special case us having an empty ring -
 	// in this case we might be coming up in an existing
 	// network and be given some ranges we might have forgotten

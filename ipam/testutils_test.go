@@ -234,7 +234,7 @@ func (grouter *TestGossipRouter) connect(sender router.PeerName, gossiper router
 	gossipChan := make(chan gossipMessage, 100)
 
 	go func() {
-		gossipTimer := time.Tick(router.GossipInterval)
+		gossipTimer := time.Tick(time.Second)
 		for {
 			select {
 			case message := <-gossipChan:
@@ -248,7 +248,7 @@ func (grouter *TestGossipRouter) connect(sender router.PeerName, gossiper router
 					gossiper.OnGossipBroadcast(message.buf)
 				}
 			case <-gossipTimer:
-				grouter.GossipBroadcast(gossiper.(router.GossipData).Encode())
+				grouter.GossipBroadcast(gossiper.Gossip().Encode())
 			}
 		}
 	}()

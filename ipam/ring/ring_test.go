@@ -307,3 +307,12 @@ func TestMisc(t *testing.T) {
 	ring.ClaimItAll()
 	println(ring.String())
 }
+
+func TestEmptyGossip(t *testing.T) {
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring2 := New(ipStart, ipEnd, peer2name)
+
+	ring1.ClaimItAll()
+	// This used to panic, and it shouldn't
+	AssertSuccess(t, ring1.merge(*ring2))
+}
