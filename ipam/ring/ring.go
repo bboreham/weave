@@ -346,7 +346,7 @@ func (r *Ring) Empty() bool {
 func (r *Ring) ClaimItAll() {
 	utils.Assert(len(r.Entries) == 0, "Cannot bootstrap ring with entries in it!")
 
-	r.insertAt(0, entry{Token: r.Start, Peer: r.Peername})
+	r.insertAt(0, entry{Token: r.Start, Peer: r.Peername, Free:r.End - r.Start})
 
 	r.assertInvariants()
 }
