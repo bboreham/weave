@@ -177,3 +177,16 @@ func (alloc *Allocator) sendRequest(dest router.PeerName, kind byte) {
 	//req := &request{dest, kind, space, alloc.timeProvider.Now().Add(GossipReqTimeout)}
 	//alloc.inflight = append(alloc.inflight, req)
 }
+
+func (alloc *Allocator) donateSpace(to router.PeerName) {
+	alloc.Debugln("Peer", to, "asked me for space")
+	start, size, ok := alloc.spaceSet.GiveUpSpace()
+	if !ok {
+		alloc.Debugln("No space to give to peer", to)
+		return
+	}
+	end := utils.Intip4(utils.Ip4int(start) + size)
+	alloc.Debugln("Giving range", start, end, size, "to", to)
+	alloc.ring.GrantRangeToHost(start, end, to)
+	alloc.gossip.GossipBroadcast(alloc.ring.GossipState())
+}

@@ -158,6 +158,10 @@ func (alloc *Allocator) queryLoop(queryChan <-chan interface{}, withTimers bool)
 				switch q.bytes[0] {
 				case msgLeaderElected:
 					q.resultChan <- alloc.handleLeaderElected()
+				case msgSpaceRequest:
+					// some other peer asked us for space
+					alloc.donateSpace(q.sender)
+					q.resultChan <- nil
 				}
 			case gossipBroadcast:
 				q.resultChan <- alloc.ring.OnGossipBroadcast(q.bytes)
