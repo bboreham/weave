@@ -6,7 +6,6 @@ import (
 	"fmt"
 	lg "github.com/zettio/weave/common"
 	"github.com/zettio/weave/ipam/utils"
-	"github.com/zettio/weave/router"
 	"net"
 )
 
@@ -31,7 +30,7 @@ func (s *SpaceSet) describe(heading string) string {
 
 // -------------------------------------------------
 
-func NewSpaceSet(pn router.PeerName, uid uint64) *SpaceSet {
+func NewSpaceSet() *SpaceSet {
 	return &SpaceSet{}
 }
 

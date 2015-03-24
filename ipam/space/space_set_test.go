@@ -26,7 +26,7 @@ func (ps1 *SpaceSet) Equal(ps2 *SpaceSet) bool {
 }
 
 func spaceSetWith(pn router.PeerName, uid uint64, spaces ...*Space) *SpaceSet {
-	ps := NewSpaceSet(pn, uid)
+	ps := NewSpaceSet()
 	for _, space := range spaces {
 		ps.AddSpace(space)
 	}
