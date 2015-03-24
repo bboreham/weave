@@ -327,3 +327,14 @@ func TestMergeOldMessage(t *testing.T) {
 	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer1name)
 	AssertSuccess(t, ring1.merge(*ring2))
 }
+
+func TestSplitRangeAtBeginning(t *testing.T) {
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring2 := New(ipStart, ipEnd, peer2name)
+
+	ring1.ClaimItAll()
+	AssertSuccess(t, ring2.merge(*ring1))
+
+	ring1.GrantRangeToHost(ipStart, ipMiddle, peer2name)
+	AssertSuccess(t, ring2.merge(*ring1))
+}
