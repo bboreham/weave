@@ -87,10 +87,30 @@ func (alloc *Allocator) string() string {
 	buf.WriteString(fmt.Sprintf("Allocator universe %s+%d\n", alloc.universeStart, alloc.universeSize))
 	buf.WriteString(alloc.ring.String())
 	buf.WriteString(alloc.spaceSet.String())
+	buf.WriteString("\nPending requests for ")
+	for _, pending := range alloc.pending {
+		buf.WriteString(pending.Ident)
+		buf.WriteString(", ")
+	}
 	return buf.String()
 }
 
+func (alloc *Allocator) checkPending() {
+	i := 0
+	for ; i < len(alloc.pending); i++ {
+		alloc.Debugln("Checking pending request for:", alloc.pending[i].Ident)
+		alloc.Debugln(alloc.string())
+		if !alloc.tryAllocateFor(alloc.pending[i].Ident, alloc.pending[i].resultChan) {
+			break
+		}
+	}
+	alloc.pending = alloc.pending[i:]
+}
+
+// Fairly quick check of what's going on; whether requests should now be
+// replied to, etc.
 func (alloc *Allocator) considerOurPosition() {
+	alloc.checkPending()
 }
 
 func (alloc *Allocator) electLeaderIfNecessary() {
@@ -104,6 +124,7 @@ func (alloc *Allocator) electLeaderIfNecessary() {
 		alloc.ring.ClaimItAll()
 		alloc.spaceSet.Add(alloc.universeStart, alloc.universeSize)
 		alloc.Infof("I was elected leader of the universe %s", alloc.string())
+		alloc.checkPending()
 	} else {
 		alloc.sendRequest(leader, msgLeaderElected)
 	}
@@ -117,7 +138,13 @@ func (alloc *Allocator) tryAllocateFor(ident string, resultChan chan<- net.IP) b
 		resultChan <- addr
 		return true
 	} else { // out of space
-		// fixme: request space
+		if donor, err := alloc.ring.ChoosePeerToAskForSpace(); err == nil {
+			alloc.Debugln("Decided to ask peer", donor, "for space")
+			alloc.sendRequest(donor, msgSpaceRequest)
+			return true
+		} else {
+			alloc.Debugln("ChoosePeerToAskForSpace error ", err)
+		}
 	}
 	return false
 }

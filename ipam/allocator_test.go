@@ -50,8 +50,8 @@ func TestAllocFree(t *testing.T) {
 	alloc.String() // force sync-up after async call
 }
 
-// Test the election mechanism
-func TestGossip2(t *testing.T) {
+func TestElection(t *testing.T) {
+	common.InitDefaultLogging(true)
 	const (
 		donateSize     = 5
 		donateStart    = "10.0.1.7"
@@ -59,6 +59,7 @@ func TestGossip2(t *testing.T) {
 	)
 
 	baseTime := time.Date(2014, 9, 7, 12, 0, 0, 0, time.UTC)
+
 	alloc1 := testAllocator(t, "01:00:00:01:00:00", testStart1+"/22")
 	defer alloc1.Stop()
 	mockTime := new(mockTimeProvider)
@@ -81,7 +82,8 @@ func TestGossip2(t *testing.T) {
 	alloc1.considerOurPosition()
 
 	mockTime.SetTime(baseTime.Add(4 * time.Second))
-	// On receipt of the GetFor, alloc1 should elect alloc2 as leader, because it has a higher name
+	SetLeader(alloc1, peerNameString)
+	// On receipt of the GetFor, alloc1 should elect alloc2 as leader
 	ExpectMessage(alloc1, peerNameString, msgLeaderElected, nil)
 
 	done := make(chan bool)

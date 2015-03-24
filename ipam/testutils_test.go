@@ -52,6 +52,7 @@ func toStringArray(messages []mockMessage) []string {
 type mockGossipComms struct {
 	t        *testing.T
 	name     string
+	leader   router.PeerName
 	messages []mockMessage
 }
 
@@ -103,9 +104,17 @@ func (m *mockGossipComms) GossipUnicast(dstPeerName router.PeerName, buf []byte)
 	return nil
 }
 
+// Gerrymandering...
+func SetLeader(alloc *Allocator, leader string) {
+	m := alloc.gossip.(*mockGossipComms)
+	m.leader, _ = router.PeerNameFromString(leader)
+}
+
 func (m *mockGossipComms) LeaderElect() router.PeerName {
-	leader, _ := router.PeerNameFromString(m.name)
-	return leader
+	if m.leader == router.UnknownPeerName {
+		m.leader, _ = router.PeerNameFromString(m.name)
+	}
+	return m.leader
 }
 
 func ExpectMessage(alloc *Allocator, dst string, msgType byte, buf []byte) {
@@ -156,7 +165,7 @@ func (alloc *Allocator) startForTesting() {
 
 // Check whether or not something was sent on a channel
 func AssertSent(t *testing.T, ch <-chan bool) {
-	timeout := time.After(time.Second)
+	timeout := time.After(10 * time.Second)
 	select {
 	case <-ch:
 		// This case is ok
