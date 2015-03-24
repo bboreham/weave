@@ -207,7 +207,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 }
 
 // Merge the given ring into this ring.
-func (r *Ring) merge(gossip *Ring) error {
+func (r *Ring) merge(gossip Ring) error {
 	r.assertInvariants()
 
 	// Don't panic when checking the gossiped in ring.
@@ -226,7 +226,8 @@ func (r *Ring) merge(gossip *Ring) error {
 	// abouts.  Assertions below would fail as it would appear
 	// other nodes are gossiping tokens in ranges we own.
 	if len(r.Entries) == 0 {
-		r.Entries = gossip.Entries
+		r.Entries = make([]entry, len(gossip.Entries))
+		copy(r.Entries, gossip.Entries)
 		return nil
 	}
 
@@ -240,24 +241,24 @@ func (r *Ring) merge(gossip *Ring) error {
 	}
 
 	// mergeEntry merges two entries with the same token
-	mergeEntry := func(existingEntry, newEntry *entry) (*entry, error) {
+	mergeEntry := func(existingEntry, newEntry entry) (entry, error) {
 		assert(existingEntry.Token == newEntry.Token, "WTF")
 		switch {
 		case existingEntry.Version == newEntry.Version:
-			if !existingEntry.Equal(newEntry) {
-				return nil, ErrInvalidEntry
+			if !existingEntry.Equal(&newEntry) {
+				return entry{}, ErrInvalidEntry
 			}
 			return existingEntry, nil
 
 		case existingEntry.Version < newEntry.Version:
 			// A new token it getting inserted
 			if existingEntry.Peer == r.Peername {
-				return nil, ErrNewerVersion
+				return entry{}, ErrNewerVersion
 			}
 			return newEntry, nil
 
 		case existingEntry.Version > newEntry.Version:
-			return newEntry, nil
+			return existingEntry, nil
 		}
 
 		panic("Should never get here - switch covers all possibilities.")
@@ -294,10 +295,10 @@ func (r *Ring) merge(gossip *Ring) error {
 			i++
 
 		case r.Entries[i].Token == gossip.Entries[j].Token:
-			if entry, err := mergeEntry(&r.Entries[i], &gossip.Entries[j]); err != nil {
+			if entry, err := mergeEntry(r.Entries[i], gossip.Entries[j]); err != nil {
 				return err
 			} else {
-				result[k] = *entry
+				result[k] = entry
 			}
 			i++
 			j++
@@ -314,9 +315,9 @@ func (r *Ring) merge(gossip *Ring) error {
 func (r *Ring) OnGossipBroadcast(msg []byte) error {
 	reader := bytes.NewReader(msg)
 	decoder := gob.NewDecoder(reader)
-	gossipedRing := &Ring{}
+	gossipedRing := Ring{}
 
-	if err := decoder.Decode(gossipedRing); err != nil {
+	if err := decoder.Decode(&gossipedRing); err != nil {
 		return err
 	}
 

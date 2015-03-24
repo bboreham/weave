@@ -156,7 +156,7 @@ func TestMergeSimple(t *testing.T) {
 	// Claim everything for peer1
 	ring1.ClaimItAll()
 	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer2name)
-	AssertSuccess(t, ring2.merge(ring1))
+	AssertSuccess(t, ring2.merge(*ring1))
 
 	ring3.Entries = []entry{{start, peer1name, 0, 0}, {middle, peer2name, 0, 0}}
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
@@ -166,12 +166,13 @@ func TestMergeSimple(t *testing.T) {
 	// check we can merge again
 	ring1.GrantRangeToHost(ipStart, ipMiddle, peer2name)
 	ring2.GrantRangeToHost(ipMiddle, ipEnd, peer1name)
-	AssertSuccess(t, ring2.merge(ring1))
-	AssertSuccess(t, ring1.merge(ring2))
+
+	AssertSuccess(t, ring2.merge(*ring1))
+	AssertSuccess(t, ring1.merge(*ring2))
 
 	ring3.Entries = []entry{{start, peer2name, 0, 1}, {middle, peer1name, 0, 1}}
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
-	wt.AssertEquals(t, ring1.Entries, ring3 .Entries)
+	wt.AssertEquals(t, ring1.Entries, ring3.Entries)
 }
 
 func TestMergeErrors(t *testing.T) {
@@ -179,26 +180,99 @@ func TestMergeErrors(t *testing.T) {
 	ring1 := New(ipStart, ipEnd, peer1name)
 	ring2 := New(ipStart, ipEnd, peer2name)
 	ring2.Entries = []entry{{middle, peer2name, 0, 0}, {start, peer2name, 0, 0}}
-	wt.AssertTrue(t, ring1.merge(ring2) == ErrNotSorted, "Expected ErrNotSorted")
+	wt.AssertTrue(t, ring1.merge(*ring2) == ErrNotSorted, "Expected ErrNotSorted")
 
 	// Should merge two rings for different ranges
 	ring2 = New(ipStart, ipMiddle, peer2name)
 	ring2.Entries = []entry{}
-	wt.AssertTrue(t, ring1.merge(ring2) == ErrDifferentSubnets, "Expected ErrDifferentSubnets")
+	wt.AssertTrue(t, ring1.merge(*ring2) == ErrDifferentSubnets, "Expected ErrDifferentSubnets")
 
 	// Cannot merge newer version of entry I own
 	ring2 = New(ipStart, ipEnd, peer2name)
 	ring1.Entries = []entry{{start, peer1name, 0, 0}}
 	ring2.Entries = []entry{{start, peer1name, 0, 1}}
-	wt.AssertTrue(t, ring1.merge(ring2) == ErrNewerVersion, "Expected ErrNewerVersion")
+	wt.AssertTrue(t, ring1.merge(*ring2) == ErrNewerVersion, "Expected ErrNewerVersion")
 
 	// Cannot merge two entries with same version but different hosts
 	ring1.Entries = []entry{{start, peer1name, 0, 0}}
 	ring2.Entries = []entry{{start, peer2name, 0, 0}}
-	wt.AssertTrue(t, ring1.merge(ring2) == ErrInvalidEntry, "Expected ErrInvalidEntry")
+	wt.AssertTrue(t, ring1.merge(*ring2) == ErrInvalidEntry, "Expected ErrInvalidEntry")
 
 	// Cannot merge an entry into a range I own
 	ring1.Entries = []entry{{start, peer1name, 0, 0}}
 	ring2.Entries = []entry{{middle, peer2name, 0, 0}}
-	wt.AssertTrue(t, ring1.merge(ring2) == ErrEntryInMyRange, "Expected ErrEntryInMyRange")
+	wt.AssertTrue(t, ring1.merge(*ring2) == ErrEntryInMyRange, "Expected ErrEntryInMyRange")
+}
+
+func TestMergeMore(t *testing.T) {
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring2 := New(ipStart, ipEnd, peer2name)
+
+	assertRing := func(ring *Ring, entries []entry) {
+		tempRing := New(ipStart, ipEnd, peer2name)
+		tempRing.Entries = entries
+		wt.AssertEquals(t, ring.Entries, tempRing.Entries)
+	}
+
+	assertRing(ring1, []entry{})
+	assertRing(ring2, []entry{})
+
+	// Claim everything for peer1
+	ring1.ClaimItAll()
+	assertRing(ring1, []entry{{start, peer1name, 0, 0}})
+	assertRing(ring2, []entry{})
+
+	// Check the merge sends it to the other ring
+	AssertSuccess(t, ring2.merge(*ring1))
+	assertRing(ring1, []entry{{start, peer1name, 0, 0}})
+	assertRing(ring2, []entry{{start, peer1name, 0, 0}})
+
+	// Give everything to peer2
+	ring1.GrantRangeToHost(ipStart, ipEnd, peer2name)
+	assertRing(ring1, []entry{{start, peer2name, 0, 1}})
+	assertRing(ring2, []entry{{start, peer1name, 0, 0}})
+
+	AssertSuccess(t, ring2.merge(*ring1))
+	assertRing(ring1, []entry{{start, peer2name, 0, 1}})
+	assertRing(ring2, []entry{{start, peer2name, 0, 1}})
+
+	// And carve off some space
+	ring2.GrantRangeToHost(ipMiddle, ipEnd, peer1name)
+	assertRing(ring1, []entry{{start, peer2name, 0, 1}})
+	assertRing(ring2, []entry{{start, peer2name, 0, 1}, {middle, peer1name, 0, 0}})
+
+	// And merge back
+	AssertSuccess(t, ring1.merge(*ring2))
+	assertRing(ring1, []entry{{start, peer2name, 0, 1}, {middle, peer1name, 0, 0}})
+	assertRing(ring2, []entry{{start, peer2name, 0, 1}, {middle, peer1name, 0, 0}})
+
+	// This should be a no-op
+	AssertSuccess(t, ring2.merge(*ring1))
+	assertRing(ring1, []entry{{start, peer2name, 0, 1}, {middle, peer1name, 0, 0}})
+	assertRing(ring2, []entry{{start, peer2name, 0, 1}, {middle, peer1name, 0, 0}})
+}
+
+// A simple test, very similar to above, but using the marshalling to byte[]s
+func TestGossip(t *testing.T) {
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring2 := New(ipStart, ipEnd, peer2name)
+
+	assertRing := func(ring *Ring, entries []entry) {
+		tempRing := New(ipStart, ipEnd, peer2name)
+		tempRing.Entries = entries
+		wt.AssertEquals(t, ring.Entries, tempRing.Entries)
+	}
+
+	assertRing(ring1, []entry{})
+	assertRing(ring2, []entry{})
+
+	// Claim everything for peer1
+	ring1.ClaimItAll()
+	assertRing(ring1, []entry{{start, peer1name, 0, 0}})
+	assertRing(ring2, []entry{})
+
+	// Check the merge sends it to the other ring
+	AssertSuccess(t, ring2.OnGossipBroadcast(ring1.GossipState()))
+	assertRing(ring1, []entry{{start, peer1name, 0, 0}})
+	assertRing(ring2, []entry{{start, peer1name, 0, 0}})
 }
