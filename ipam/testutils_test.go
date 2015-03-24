@@ -249,7 +249,7 @@ func (grouter *TestGossipRouter) connect(sender router.PeerName, gossiper router
 				} else {
 					err := gossiper.OnGossipBroadcast(message.buf)
 					if err != nil {
-						common.Error.Printf("Error doing gossip broadcase to %s: %s", sender, err)
+						common.Error.Printf("Error doing gossip broadcast to %s: %s", sender, err)
 					}
 				}
 			case <-gossipTimer:
