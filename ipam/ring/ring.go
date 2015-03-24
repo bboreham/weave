@@ -14,6 +14,7 @@ import (
 	"github.com/zettio/weave/ipam/utils"
 	"github.com/zettio/weave/router"
 	"net"
+	"math/rand"
 	"sort"
 )
 
@@ -22,6 +23,7 @@ type entry struct {
 	Peer      router.PeerName // Who owns this range
 	Tombstone uint32          // Timestamp when this entry was tombstone; 0 means live
 	Version   uint32          // Version of this range
+	Free      uint32 // Number of free IPs in this range
 }
 
 func (e1 *entry) Equal(e2 *entry) bool {
@@ -64,6 +66,7 @@ var (
 	ErrNewerVersion     = errors.New("Recieved new version for entry I own!")
 	ErrInvalidEntry     = errors.New("Recieved invalid state update!")
 	ErrEntryInMyRange   = errors.New("Recieved new entry in my range!")
+	ErrNoFreeSpace      = errors.New("No free space found!")
 )
 
 func (r *Ring) checkInvariants() error {
@@ -175,7 +178,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		previous := r.Entries[j%len(r.Entries)]
 		assert(previous.Peer == r.Peername, "Trying to mutate range I don't own")
 
-		r.insertAt(i, entry{start, peer, 0, 0})
+		r.insertAt(i, entry{Token:start, Peer:peer})
 	}
 
 	r.assertInvariants()
@@ -201,7 +204,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		return
 	} else {
 		assert(r.between(end, i, k), "End spans another token")
-		r.insertAt(k, entry{end, r.Peername, 0, 0})
+		r.insertAt(k, entry{Token:end, Peer:r.Peername})
 		r.assertInvariants()
 	}
 }
@@ -344,7 +347,7 @@ func (r *Ring) Empty() bool {
 func (r *Ring) ClaimItAll() {
 	assert(len(r.Entries) == 0, "Cannot bootstrap ring with entries in it!")
 
-	r.insertAt(0, entry{r.Start, r.Peername, 0, 0})
+	r.insertAt(0, entry{Token:r.Start, Peer:r.Peername})
 
 	r.assertInvariants()
 }
@@ -356,4 +359,70 @@ func (r *Ring) String() string {
 			entry.Peer, entry.Tombstone, entry.Version)
 	}
 	return buffer.String()
+}
+
+func (r *Ring) ReportFree(startIP net.IP, free uint32) {
+	start = utils.Ip4int(startIP)
+
+	// Look for entry
+	i := sort.Search(len(r.Entries), func(j int) bool {
+		return r.Entries[j].Token >= start
+	})
+
+	assert(i < len(r.Entries) && r.Entries[i].Token == start &&
+		r.Entries[i].Peer == r.Peername, "Trying to report free on space I don't own")
+
+	r.Entries[i].Free = free
+	r.Entries[i].Version++
+}
+
+func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
+	// Construct total free space and number of ranges per peer
+	totalSpacePerPeer := make(map[router.PeerName]int)
+	numRangesPerPeer := make(map[router.PeerName]int)
+	for _, entry := range r.Entries {
+		// Ignore ranges with no free space
+		if entry.Free <= 0 {
+			continue
+		}
+
+		if sum, ok := totalSpacePerPeer[entry.Peer]; ok {
+			totalSpacePerPeer[entry.Peer] = sum + int(entry.Free)
+			numRangesPerPeer[entry.Peer] = numRangesPerPeer[entry.Peer] + 1
+		} else {
+			totalSpacePerPeer[entry.Peer] = int(entry.Free)
+			numRangesPerPeer[entry.Peer] = 1
+		}
+	}
+
+	assert(len(totalSpacePerPeer) == len(numRangesPerPeer), "WFT")
+
+	if len(totalSpacePerPeer) <= 0 {
+		err = ErrNoFreeSpace
+		return
+	}
+
+	// Construct average free space per range per peer
+	type choice struct { peer router.PeerName; weight int }
+	sum := 0
+	choices := make([]choice, len(totalSpacePerPeer))
+	i := 0
+	for peer, free := range totalSpacePerPeer {
+		average := (free / numRangesPerPeer[peer])
+		choices[i] = choice{peer, average}
+		sum += average
+		i++
+	}
+
+	// Pick random peer, weighted by average free space
+	rn := rand.Intn(sum)
+	for _, c := range choices {
+		rn -= c.weight
+		if rn < 0 {
+			result = c.peer
+			return
+		}
+	}
+
+	panic("Should never reach this point")
 }
