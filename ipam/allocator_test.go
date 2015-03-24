@@ -166,23 +166,24 @@ func TestCancel(t *testing.T) {
 	}
 
 	// Now we're going to stop alloc2 and ask alloc1
-	// for an allocation in alloc2's range
+	// for an allocation
 	alloc2.Stop()
 
 	cancelChan := make(chan bool, 1)
-	doneChan := make(chan error)
+	doneChan := make(chan bool)
 	go func() {
-		err := alloc1.Claim("baz", res2, cancelChan)
-		doneChan <- err
+		// Fixme: need to ensure this goes to alloc2
+		ip := alloc1.GetFor("baz", cancelChan)
+		doneChan <- (ip == nil)
 	}()
 
-	AssertNothingSentErr(t, doneChan)
+	AssertNothingSent(t, doneChan)
 	time.Sleep(1000 * time.Millisecond)
-	AssertNothingSentErr(t, doneChan)
+	AssertNothingSent(t, doneChan)
 	cancelChan <- true
-	err := <-doneChan
-	if err != nil {
-		wt.Fatalf(t, "Error: err should be nil!")
+	flag := <-doneChan
+	if flag {
+		wt.Fatalf(t, "Error: got nil result from GetFor")
 	}
 }
 
