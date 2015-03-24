@@ -157,15 +157,7 @@ func (alloc *Allocator) queryLoop(queryChan <-chan interface{}, withTimers bool)
 			case gossipUnicast:
 				switch q.bytes[0] {
 				case msgLeaderElected:
-					// some other peer decided we were the leader:
-					// if we already have tokens then they didn't get the memo; repeat
-					if !alloc.ring.Empty() {
-						alloc.gossip.GossipBroadcast(alloc.ring.GossipState())
-					} else {
-						// re-run the election here to avoid races
-						alloc.electLeaderIfNecessary()
-					}
-					q.resultChan <- nil
+					q.resultChan <- alloc.handleLeaderElected()
 				}
 			case gossipBroadcast:
 				q.resultChan <- alloc.ring.OnGossipBroadcast(q.bytes)
@@ -179,7 +171,9 @@ func (alloc *Allocator) queryLoop(queryChan <-chan interface{}, withTimers bool)
 				q.resultChan <- alloc.ring.GossipState()
 			}
 		}
+		alloc.Debugln("queryLoop iteration completed")
 	}
+	alloc.Debugln("queryLoop finished")
 }
 
 func (alloc *Allocator) Errorln(args ...interface{}) {

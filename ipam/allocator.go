@@ -122,6 +122,7 @@ func (alloc *Allocator) electLeaderIfNecessary() {
 	if leader == alloc.ourName {
 		// I'm the winner; take control of the whole universe
 		alloc.ring.ClaimItAll()
+		alloc.ring.ReportFree(alloc.universeStart, alloc.universeSize)
 		alloc.spaceSet.Add(alloc.universeStart, alloc.universeSize)
 		alloc.Infof("I was elected leader of the universe %s", alloc.string())
 		alloc.checkPending()
@@ -156,6 +157,18 @@ func (alloc *Allocator) handleCancelGetFor(ident string) {
 			break
 		}
 	}
+}
+
+func (alloc *Allocator) handleLeaderElected() error {
+	// some other peer decided we were the leader:
+	// if we already have tokens then they didn't get the memo; repeat
+	if !alloc.ring.Empty() {
+		alloc.gossip.GossipBroadcast(alloc.ring.GossipState())
+	} else {
+		// re-run the election here to avoid races
+		alloc.electLeaderIfNecessary()
+	}
+	return nil
 }
 
 func (alloc *Allocator) sendRequest(dest router.PeerName, kind byte) {

@@ -109,10 +109,11 @@ func TestElection(t *testing.T) {
 	ExpectMessage(alloc1, peerNameString, msgSpaceRequest, alloc1.EncodeState())
 	alloc1.OnGossipBroadcast(alloc2.EncodeState())
 
-	// Now make it look like alloc2 has given up half its space
-	alloc2.AmendSpace(donateSize)
+	//
+	alloc2.handleSpaceRequest(alloc1.ourName, alloc1.EncodeState())
 
-	ExpectBroadcastMessage(alloc1, alloc2.EncodeState())
+	ExpectBroadcastMessage(alloc2, alloc2.EncodeState())
+	alloc1.OnGossipBroadcast(alloc2.EncodeState())
 	AssertSent(t, done)
 
 	CheckAllExpectedMessagesSent(alloc1, alloc2)
@@ -181,7 +182,7 @@ func (alloc *Allocator) AssertNothingPending(t *testing.T) {
 }
 
 func (alloc *Allocator) EncodeState() []byte {
-	return alloc.Encode()
+	return alloc.ring.GossipState()
 }
 
 func (alloc *Allocator) EncodeClaimMsg(start string, size uint32) []byte {
