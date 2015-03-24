@@ -10,8 +10,6 @@ import (
 )
 
 const (
-	ourUID     = 123456
-	peerUID    = 654321
 	testStart1 = "10.0.1.0"
 	testStart2 = "10.0.2.0"
 	testStart3 = "10.0.3.0"
@@ -26,7 +24,7 @@ func TestAllocFree(t *testing.T) {
 		spaceSize  = 4
 	)
 
-	alloc := testAllocator(t, "01:00:00:01:00:00", ourUID, testAddr1+"/30")
+	alloc := testAllocator(t, "01:00:00:01:00:00", testAddr1+"/30")
 	defer alloc.Stop()
 
 	addr1 := alloc.GetFor(container1, nil)
@@ -53,7 +51,7 @@ func TestAllocFree(t *testing.T) {
 }
 
 func TestMultiSpaces(t *testing.T) {
-	alloc := testAllocator(t, "01:00:00:01:00:00", ourUID, testStart1+"/30")
+	alloc := testAllocator(t, "01:00:00:01:00:00", testStart1+"/30")
 	defer alloc.Stop()
 	alloc.addSpace(testStart1, 1)
 	alloc.addSpace(testStart2, 3)
@@ -78,7 +76,7 @@ func TestGossip2(t *testing.T) {
 	)
 
 	baseTime := time.Date(2014, 9, 7, 12, 0, 0, 0, time.UTC)
-	alloc1 := testAllocator(t, "01:00:00:01:00:00", ourUID, testStart1+"/22")
+	alloc1 := testAllocator(t, "01:00:00:01:00:00", testStart1+"/22")
 	defer alloc1.Stop()
 	mockTime := new(mockTimeProvider)
 	mockTime.SetTime(baseTime)
@@ -88,7 +86,7 @@ func TestGossip2(t *testing.T) {
 	mockTime.SetTime(baseTime.Add(1 * time.Second))
 
 	// Simulate another peer on the gossip network
-	alloc2 := testAllocator(t, peerNameString, peerUID, testStart1+"/22")
+	alloc2 := testAllocator(t, peerNameString, testStart1+"/22")
 	defer alloc2.Stop()
 	alloc2.setTimeProvider(mockTime)
 
@@ -102,7 +100,7 @@ func TestGossip2(t *testing.T) {
 	alloc1.considerOurPosition()
 
 	mockTime.SetTime(baseTime.Add(4 * time.Second))
-	// On receipt of the GetFor, alloc1 should elect alloc2 as leader, because it has a higher UID
+	// On receipt of the GetFor, alloc1 should elect alloc2 as leader, because it has a higher name
 	ExpectMessage(alloc1, peerNameString, msgLeaderElected, nil)
 
 	done := make(chan bool)
@@ -140,19 +138,17 @@ func TestGossip2(t *testing.T) {
 func TestCancel(t *testing.T) {
 	//common.InitDefaultLogging(true)
 	const (
-		CIDR     = "10.0.1.7/22"
-		peer1UID = 123456
-		peer2UID = 789101
+		CIDR = "10.0.1.7/22"
 	)
 	peer1Name, _ := router.PeerNameFromString("01:00:00:02:00:00")
 	peer2Name, _ := router.PeerNameFromString("02:00:00:02:00:00")
 
 	router := TestGossipRouter{make(map[router.PeerName]chan gossipMessage), 0.0}
 
-	alloc1, _ := NewAllocator(peer1Name, peer1UID, CIDR)
+	alloc1, _ := NewAllocator(peer1Name, CIDR)
 	alloc1.SetGossip(router.connect(peer1Name, alloc1))
 
-	alloc2, _ := NewAllocator(peer2Name, peer2UID, CIDR)
+	alloc2, _ := NewAllocator(peer2Name, CIDR)
 	alloc2.SetGossip(router.connect(peer2Name, alloc2))
 
 	alloc1.Start()

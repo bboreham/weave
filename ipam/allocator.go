@@ -43,7 +43,7 @@ type Allocator struct {
 	gossip      router.Gossip
 }
 
-func NewAllocator(ourName router.PeerName, ourUID uint64, universeCIDR string) (*Allocator, error) {
+func NewAllocator(ourName router.PeerName, universeCIDR string) (*Allocator, error) {
 	_, universeNet, err := net.ParseCIDR(universeCIDR)
 	if err != nil {
 		return nil, err

@@ -33,12 +33,8 @@ func TestHttp(t *testing.T) {
 		testAddr1   = "10.0.3.5"
 		testCIDR1   = "10.0.3.5/29"
 	)
-	const (
-		ourUID  = 123456
-		peerUID = 654321
-	)
 
-	alloc := testAllocator(t, "08:00:27:01:c3:9a", ourUID, testCIDR1)
+	alloc := testAllocator(t, "08:00:27:01:c3:9a", testCIDR1)
 	port := rand.Intn(10000) + 32768
 	fmt.Println("Http test on port", port)
 	go ListenHttp(port, alloc)
@@ -79,12 +75,8 @@ func impTestHttpCancel(t *testing.T) {
 		containerID = "deadbeef"
 		testCIDR1   = "10.0.3.5/29"
 	)
-	const (
-		ourUID  = 123456
-		peerUID = 654321
-	)
 
-	alloc := testAllocator(t, "08:00:27:01:c3:9a", ourUID, testCIDR1)
+	alloc := testAllocator(t, "08:00:27:01:c3:9a", testCIDR1)
 	port := rand.Intn(10000) + 32768
 	fmt.Println("Http test on port", port)
 	go ListenHttp(port, alloc)
