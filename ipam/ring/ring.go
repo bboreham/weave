@@ -243,24 +243,26 @@ func (r *Ring) merge(gossip Ring) error {
 	}
 
 	// mergeEntry merges two entries with the same token
-	mergeEntry := func(existingEntry, newEntry entry) (entry, error) {
+	// returns the merged entry, flag indicating if this was
+	// from the gossiped ring, and an error
+	mergeEntry := func(existingEntry, newEntry entry) (entry, bool, error) {
 		utils.Assert(existingEntry.Token == newEntry.Token, "WTF")
 		switch {
 		case existingEntry.Version == newEntry.Version:
 			if !existingEntry.Equal(&newEntry) {
-				return entry{}, ErrInvalidEntry
+				return entry{}, false, ErrInvalidEntry
 			}
-			return existingEntry, nil
+			return existingEntry, false, nil
 
 		case existingEntry.Version < newEntry.Version:
 			// A new token it getting inserted
 			if existingEntry.Peer == r.Peername {
-				return entry{}, ErrNewerVersion
+				return entry{}, false, ErrNewerVersion
 			}
-			return newEntry, nil
+			return newEntry, true, nil
 
 		case existingEntry.Version > newEntry.Version:
-			return existingEntry, nil
+			return existingEntry, false, nil
 		}
 
 		panic("Should never get here - switch covers all possibilities.")
@@ -290,6 +292,12 @@ func (r *Ring) merge(gossip Ring) error {
 		}
 		result[k] = gossip.Entries[j]
 		j++
+
+		// Don't update current owner if we've consumed a
+		// gossip entry, as we might have been given some
+		// space, and this would cause us to reject the
+		// next token
+		currentOwner = router.UnknownPeerName
 		return nil
 	}
 
@@ -297,18 +305,30 @@ func (r *Ring) merge(gossip Ring) error {
 	consumeLocal := func(k int) {
 		result[k] = r.Entries[i]
 		i++
+		currentOwner = result[k].Peer
 	}
 
 	// Merges an entry from the gossiped ring
 	// with our state
 	consumeBoth := func(k int) error {
-		if entry, err := mergeEntry(r.Entries[i], gossip.Entries[j]); err != nil {
+		entry, remote, err := mergeEntry(r.Entries[i], gossip.Entries[j])
+		if err != nil {
 			return err
 		} else {
 			result[k] = entry
 		}
 		i++
 		j++
+
+		// Don't update current owner if we've consumed a
+		// gossip entry, as we might have been given some
+		// space, and this would cause us to reject the
+		// next token
+		if !remote {
+			currentOwner = result[k].Peer
+		} else {
+			currentOwner = router.UnknownPeerName
+		}
 		return nil
 	}
 
@@ -336,7 +356,6 @@ func (r *Ring) merge(gossip Ring) error {
 				return err
 			}
 		}
-		currentOwner = result[k].Peer
 	}
 	utils.Assert(i == len(r.Entries) && j == len(gossip.Entries), "WTF")
 
