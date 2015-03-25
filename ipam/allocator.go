@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	lg "github.com/zettio/weave/common"
 	"github.com/zettio/weave/ipam/ring"
 	"github.com/zettio/weave/ipam/space"
 	"github.com/zettio/weave/ipam/utils"
@@ -33,8 +34,13 @@ func (alloc *Allocator) Gossip() router.GossipData {
 	return &ipamGossipData{alloc}
 }
 
+type pendingAllocation struct {
+	resultChan chan<- net.IP
+	Ident      string
+}
+
 type Allocator struct {
-	queryChan     chan<- interface{}
+	actionChan    chan<- interface{}
 	ourName       router.PeerName
 	universeStart net.IP
 	universeSize  uint32
@@ -42,7 +48,7 @@ type Allocator struct {
 	ring          *ring.Ring // it's for you!
 	spaceSet      *space.SpaceSet
 	owned         map[string][]net.IP // who owns what address, indexed by container-ID
-	pending       []getFor
+	pending       []pendingAllocation
 	gossip        router.Gossip
 }
 
@@ -74,12 +80,6 @@ func NewAllocator(ourName router.PeerName, universeCIDR string) (*Allocator, err
 
 func (alloc *Allocator) SetGossip(gossip router.Gossip) {
 	alloc.gossip = gossip
-}
-
-func (alloc *Allocator) Start() {
-	queryChan := make(chan interface{}, router.ChannelSize)
-	alloc.queryChan = queryChan
-	go alloc.queryLoop(queryChan, true)
 }
 
 func (alloc *Allocator) string() string {
@@ -217,4 +217,14 @@ func (alloc *Allocator) assertInvariants() {
 		utils.Assert(s.Start.Equal(r.Start) && s.Size == rSize,
 			fmt.Sprintf("Range starting at %s out of sync with space set!", r.Start))
 	}
+}
+
+func (alloc *Allocator) Errorln(args ...interface{}) {
+	lg.Error.Println(append([]interface{}{fmt.Sprintf("[allocator %s]:", alloc.ourName)}, args...)...)
+}
+func (alloc *Allocator) Infof(fmt string, args ...interface{}) {
+	lg.Info.Printf("[allocator %s] "+fmt, append([]interface{}{alloc.ourName}, args...)...)
+}
+func (alloc *Allocator) Debugln(args ...interface{}) {
+	lg.Debug.Println(append([]interface{}{fmt.Sprintf("[allocator %s]:", alloc.ourName)}, args...)...)
 }

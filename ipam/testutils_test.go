@@ -167,9 +167,9 @@ func testAllocator(t *testing.T, name string, universeCIDR string) *Allocator {
 }
 
 func (alloc *Allocator) startForTesting() {
-	queryChan := make(chan interface{}, router.ChannelSize)
-	alloc.queryChan = queryChan
-	go alloc.queryLoop(queryChan, false)
+	actionChan := make(chan interface{}, router.ChannelSize)
+	alloc.actionChan = actionChan
+	go alloc.actorLoop(actionChan, false)
 }
 
 // Check whether or not something was sent on a channel
