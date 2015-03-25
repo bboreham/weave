@@ -50,6 +50,8 @@ func (alloc *Allocator) HandleHttp(mux *http.ServeMux) {
 					Error, w, "No free addresses", http.StatusServiceUnavailable,
 					"No free addresses")
 			}
+		default:
+			http.Error(w, "Verb not handled", http.StatusBadRequest)
 		}
 	})
 }

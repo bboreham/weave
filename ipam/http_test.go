@@ -21,6 +21,11 @@ func HttpGet(t *testing.T, url string) string {
 	return string(body)
 }
 
+func genHttp(method string, url string) (resp *http.Response, err error) {
+	req, _ := http.NewRequest(method, url, nil)
+	return http.DefaultClient.Do(req)
+}
+
 func TestHttp(t *testing.T) {
 	var (
 		containerID = "deadbeef"
@@ -59,6 +64,31 @@ func TestHttp(t *testing.T) {
 	// Would like to shut down the http server at the end of this test
 	// but it's complicated.
 	// See https://groups.google.com/forum/#!topic/golang-nuts/vLHWa5sHnCE
+}
+
+func TestBadHttp(t *testing.T) {
+	var (
+		containerID = "deadbeef"
+		testCIDR1   = "10.0.0.0/8"
+		testAddr1   = "10.0.3.9"
+	)
+
+	alloc := testAllocator(t, "08:00:27:01:c3:9a", testCIDR1)
+	port := rand.Intn(10000) + 32768
+	fmt.Println("BadHttp test on port", port)
+	go ListenHttp(port, alloc)
+	// Verb that's not handled
+	resp, err := genHttp("DELETE", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
+	wt.AssertNoErr(t, err)
+	wt.AssertStatus(t, resp.StatusCode, http.StatusBadRequest, "http response")
+	// Mis-spelled URL
+	resp, err = genHttp("GET", fmt.Sprintf("http://localhost:%d/xip/%s/", port, containerID))
+	wt.AssertNoErr(t, err)
+	wt.AssertStatus(t, resp.StatusCode, http.StatusNotFound, "http response")
+	// Malformed URL
+	resp, err = genHttp("GET", fmt.Sprintf("http://localhost:%d/ip/%s/foo/bar/baz", port, containerID))
+	wt.AssertNoErr(t, err)
+	wt.AssertStatus(t, resp.StatusCode, http.StatusBadRequest, "http response")
 }
 
 func TestHttpCancel(t *testing.T) {
