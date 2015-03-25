@@ -22,8 +22,8 @@ type weaver struct {
 func main() {
 	//RunWithTimeout(10*time.Second, TestAllocFromOne)
 	//RunWithTimeout(20*time.Second, TestAllocFromRand)
-	TestCreationAndDestruction()
-	//TestAllocAndDelete(5, 10)
+	//TestCreationAndDestruction()
+	TestAllocAndDelete(5, 10)
 }
 
 // Borrowed from net/http tests:
@@ -128,19 +128,21 @@ func TestAllocAndDelete(numWeaves, numGoroutines int) {
 	context.ips = make([]string, MaxContainers)
 	context.ipmap = make(map[string]int)
 
+	numAllocated := 0
 	// Do some allocations to get going
-	for i := 0; i < MaxAddresses*9/10; i++ {
+	for i := 0; i < MaxAddresses*7/10; i++ {
 		client := rand.Intn(numWeaves)
 		context.allocate(client, i)
+		numAllocated++
 	}
 	channel := make(chan interface{}, 4)
 	for i := 0; i < numGoroutines; i++ {
 		go context.actionLoop(channel)
 	}
 	for {
-		oper := rand.Intn(2)
-		switch oper {
-		case 0: // free
+		r := rand.Float32()
+		switch {
+		case r < 0.9: // free
 			context.Lock()
 			n := rand.Intn(len(context.ips))
 			ip := context.ips[n]
@@ -149,14 +151,21 @@ func TestAllocAndDelete(numWeaves, numGoroutines int) {
 				// Clear out the entries so we don't try to free them again
 				delete(context.ipmap, ip)
 				context.ips[n] = "pending"
+				numAllocated--
 				context.Unlock()
 				channel <- freeOper{weaveNum: weaveNum, ip: ip, containerNum: n}
 			} else {
 				context.Unlock()
 			}
-		case 1: // allocate multiple addresses from the same peer
+		case r < 1.0: // allocate multiple addresses from the same peer
 			client := rand.Intn(len(context.weaves))
 			num := rand.Intn(100)
+			if num > MaxAddresses-numAllocated {
+				num = MaxAddresses - numAllocated
+			}
+			if num == 0 {
+				continue
+			}
 			op := allocOper{weaveNum: client, containerNums: make([]int, 0)}
 			for i := 0; i < num; i++ {
 				context.Lock()
@@ -167,6 +176,7 @@ func TestAllocAndDelete(numWeaves, numGoroutines int) {
 				}
 				context.Unlock()
 			}
+			numAllocated += len(op.containerNums)
 			channel <- op
 		}
 	}
@@ -232,7 +242,7 @@ func (context *testContext) actionLoop(input <-chan interface{}) {
 			default:
 				lg.Error.Printf("Unexpected message %+v", op)
 			}
-			time.Sleep(time.Second / 10)
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 }
