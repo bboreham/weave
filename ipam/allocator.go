@@ -15,6 +15,7 @@ import (
 const (
 	msgSpaceRequest = iota
 	msgLeaderElected
+	msgGossip
 )
 
 // GossipData implementation is trivial - we always gossip the whole ring
@@ -183,7 +184,7 @@ func (alloc *Allocator) donateSpace(to router.PeerName) {
 	end := utils.Intip4(utils.Ip4int(start) + size)
 	alloc.Debugln("Giving range", start, end, size, "to", to)
 	alloc.ring.GrantRangeToHost(start, end, to)
-	alloc.gossip.GossipBroadcast(alloc.ring.GossipState())
+	alloc.sendRequest(to, msgGossip)
 }
 
 // considerNewSpaces iterates through ranges in the ring

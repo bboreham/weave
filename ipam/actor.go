@@ -88,6 +88,10 @@ func (alloc *Allocator) OnGossipUnicast(sender router.PeerName, msg []byte) erro
 			// some other peer asked us for space
 			alloc.donateSpace(sender)
 			resultChan <- nil
+		case msgGossip:
+			resultChan <- alloc.ring.OnGossipBroadcast(msg[1:])
+			alloc.considerNewSpaces()
+			alloc.considerOurPosition()
 		}
 	}
 	return <-resultChan
