@@ -253,12 +253,12 @@ func (grouter *TestGossipRouter) connect(sender router.PeerName, gossiper router
 				if message.isUnicast {
 					err := gossiper.OnGossipUnicast(*message.sender, message.buf)
 					if err != nil {
-						common.Error.Printf("Error doing gossip unicast to %s: %s", sender, err)
+						panic(fmt.Sprintf("Error doing gossip unicast to %s: %s", sender, err))
 					}
 				} else {
 					err := gossiper.OnGossipBroadcast(message.buf)
 					if err != nil {
-						common.Error.Printf("Error doing gossip broadcast to %s: %s", sender, err)
+						panic(fmt.Sprintf("Error doing gossip broadcast to %s: %s", sender, err))
 					}
 				}
 			case <-gossipTimer:
@@ -279,6 +279,7 @@ func (client TestGossipRouterClient) GossipUnicast(dstPeerName router.PeerName, 
 	select {
 	case client.router.gossipChans[dstPeerName] <- gossipMessage{true, &client.sender, buf}:
 	default: // drop the message if we cannot send it
+		common.Debug.Printf("Dropping message")
 	}
 	return nil
 }

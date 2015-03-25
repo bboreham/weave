@@ -203,3 +203,18 @@ func (alloc *Allocator) AmendSpace(newSize int) {
 	//alloc.ourSpaceSet.spaces[0].(*MutableSpace).MinSpace.Size = newSize
 	//alloc.ourSpaceSet.version++
 }
+
+func TestFakeRouterSimple(t *testing.T) {
+	common.InitDefaultLogging(true)
+	const (
+		cidr         = "10.0.1.7/22"
+	)
+	allocs, _ := makeNetworkOfAllocators(2, cidr)
+
+	alloc1 := allocs[0]
+	//alloc2 := allocs[1]
+
+	addr := alloc1.GetFor("foo", nil)
+
+	println("Got addr", addr)
+}
