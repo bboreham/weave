@@ -114,14 +114,23 @@ func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
 	return &Ring{start, end, peer, make([]entry, 0)}
 }
 
+func (r *Ring) entry(i int) *entry {
+	i = i % len(r.Entries)
+	if i < 0 {
+		i += len(r.Entries)
+
+	}
+	return &r.Entries[i]
+}
+
 // Is token between entries at i and j?
 // NB i and j can overflow and will wrap
 // NBB if entries[i].token == token, this will return true
 func (r *Ring) between(token uint32, i, j int) bool {
 	utils.Assert(i < j, "Start and end must be in order")
 
-	first := r.Entries[i%len(r.Entries)]
-	second := r.Entries[j%len(r.Entries)]
+	first := r.entry(i)
+	second := r.entry(j)
 
 	switch {
 	case first.Token == second.Token:
@@ -143,6 +152,7 @@ func (r *Ring) between(token uint32, i, j int) bool {
 
 // Grant range [start, end) to peer
 // Note, due to wrapping, end can be less than start
+// TODO grant should calulate free correctly
 func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	r.assertInvariants()
 
@@ -169,7 +179,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		// find the preceeding token and check we own it (being careful for wrapping)
 		j := i - 1
 		utils.Assert(r.between(start, j, i), "??")
-		previous := r.Entries[j%len(r.Entries)]
+		previous := r.entry(j)
 		utils.Assert(previous.Peer == r.Peername, "Trying to mutate range I don't own")
 
 		r.insertAt(i, entry{Token: start, Peer: peer})
@@ -188,7 +198,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	//        elses ranges.
 
 	k := i + 1
-	nextEntry := &r.Entries[k%len(r.Entries)]
+	nextEntry := r.entry(k)
 
 	// End needs wrapping
 	end = r.Start + ((end - r.Start) % (r.End - r.Start))
@@ -436,7 +446,7 @@ func (r *Ring) OwnedRanges() RangeSlice {
 
 		// next logical token in ring; be careful of
 		// wrapping the index
-		nextEntry := r.Entries[(i+1)%len(r.Entries)]
+		nextEntry := r.entry(i + 1)
 
 		switch {
 		case nextEntry.Token == r.Start:
@@ -470,7 +480,11 @@ func (r *Ring) OwnedRanges() RangeSlice {
 func (r *Ring) ClaimItAll() {
 	utils.Assert(len(r.Entries) == 0, "Cannot bootstrap ring with entries in it!")
 
-	r.insertAt(0, entry{Token: r.Start, Peer: r.Peername, Free: r.End - r.Start})
+	// We reserver the first and last address with a special range; this ensures
+	// they are never given out by anyone
+	r.insertAt(0, entry{Token: r.Start + 1, Peer: r.Peername,
+		Free: r.End - r.Start - 2})
+	r.insertAt(1, entry{Token: r.End - 1, Peer: router.UnknownPeerName})
 
 	r.assertInvariants()
 }
