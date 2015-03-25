@@ -392,6 +392,78 @@ func (r *Ring) Empty() bool {
 	return len(r.Entries) == 0
 }
 
+// Return type for OwnedRanges.
+// NB End can be less than Start for ranges
+// which cross 0.
+type Range struct {
+	Start, End net.IP // [Start, End) of range I own
+}
+
+type RangeSlice []Range
+
+func (r1 Range) Equal(r2 Range) bool {
+	return r1.Start.Equal(r2.Start) && r1.End.Equal(r2.End)
+}
+
+func (rs1 RangeSlice) Equal(rs2 []Range) bool {
+	if len(rs1) != len(rs2) {
+		return false
+	}
+
+	for i := 0; i < len(rs1); i++ {
+		if !rs1[i].Equal(rs2[i]) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// Return slice of Ranges indicating which
+// ranges are owned by this peer.
+func (r *Ring) OwnedRanges() RangeSlice {
+	// Cannot return more the entries + 1 results
+	// +1 for splitting results spanning 0
+	result := make([]Range, len(r.Entries)+1)
+	j := 0 // index into above slice
+
+	// Finally iterate through entries again
+	// filling in result as we go.
+	for i, entry := range r.Entries {
+		if entry.Peer != r.Peername {
+			continue
+		}
+
+		// next logical token in ring; be careful of
+		// wrapping the index
+		nextEntry := r.Entries[(i+1)%len(r.Entries)]
+
+		switch {
+		case nextEntry.Token == r.Start:
+			// be careful here; if end token == start (ie last)
+			// entry on ring, we want to actually use r.End
+			result[j] = Range{Start: utils.Intip4(entry.Token),
+				End: utils.Intip4(r.End)}
+			j++
+
+		case nextEntry.Token <= entry.Token:
+			// We wrapped; want to split around 0
+			result[j] = Range{Start: utils.Intip4(entry.Token),
+				End: utils.Intip4(r.End)}
+			result[j+1] = Range{Start: utils.Intip4(r.Start),
+				End: utils.Intip4(nextEntry.Token)}
+			j = j + 2
+
+		default:
+			result[j] = Range{Start: utils.Intip4(entry.Token),
+				End: utils.Intip4(nextEntry.Token)}
+			j++
+		}
+	}
+
+	return result[:j]
+}
+
 // Claim entire ring.  Only works for empty rings.
 func (r *Ring) ClaimItAll() {
 	utils.Assert(len(r.Entries) == 0, "Cannot bootstrap ring with entries in it!")

@@ -349,3 +349,24 @@ func TestSplitRangeAtBeginning(t *testing.T) {
 	ring1.GrantRangeToHost(ipStart, ipMiddle, peer2name)
 	AssertSuccess(t, ring2.merge(*ring1))
 }
+
+func TestOwnedRange(t *testing.T) {
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring1.ClaimItAll()
+
+	wt.AssertTrue(t, ring1.OwnedRanges().Equal(
+		[]Range{{Start: ipStart, End: ipEnd}}), "invalid")
+
+	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer2name)
+	wt.AssertTrue(t, ring1.OwnedRanges().Equal(
+		[]Range{{Start: ipStart, End: ipMiddle}}), "invalid")
+
+	ring2 := New(ipStart, ipEnd, peer2name)
+	ring2.merge(*ring1)
+	wt.AssertTrue(t, ring2.OwnedRanges().Equal(
+		[]Range{{Start: ipMiddle, End: ipEnd}}), "invalid")
+
+	ring2.Entries = []entry{{Token: middle, Peer: peer2name}}
+	wt.AssertTrue(t, ring2.OwnedRanges().Equal(
+		[]Range{{Start: ipMiddle, End: ipEnd}, {Start: ipStart, End: ipMiddle}}), "invalid")
+}
