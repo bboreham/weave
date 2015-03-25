@@ -59,12 +59,13 @@ func TestElection(t *testing.T) {
 	const (
 		donateSize     = 5
 		donateStart    = "10.0.1.7"
+		ourNameString  = "01:00:00:01:00:00"
 		peerNameString = "02:00:00:02:00:00"
 	)
 
 	baseTime := time.Date(2014, 9, 7, 12, 0, 0, 0, time.UTC)
 
-	alloc1 := testAllocator(t, "01:00:00:01:00:00", testStart1+"/22")
+	alloc1 := testAllocator(t, ourNameString, testStart1+"/22")
 	defer alloc1.Stop()
 	mockTime := new(mockTimeProvider)
 	mockTime.SetTime(baseTime)
@@ -114,8 +115,9 @@ func TestElection(t *testing.T) {
 	ExpectMessage(alloc1, peerNameString, msgSpaceRequest, nil)
 	alloc1.OnGossipBroadcast(alloc2.EncodeState())
 
-	//
-	alloc2.handleSpaceRequest(alloc1.ourName, alloc1.EncodeState())
+	// alloc2 receives the space request and replies
+	ExpectMessage(alloc2, ourNameString, msgGossip, nil)
+	alloc2.OnGossipUnicast(alloc1.ourName, router.Concat([]byte{msgSpaceRequest}, alloc1.EncodeState()))
 
 	// Now alloc1 receives the space donation
 	alloc1.OnGossipBroadcast(alloc2.EncodeState())
