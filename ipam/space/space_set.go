@@ -48,6 +48,7 @@ func NewSpaceSet() *SpaceSet {
 
 func (s *SpaceSet) assertInvariants() {
 	utils.Assert(sort.IsSorted(s), "space set must always be sorted")
+	// TODO invariant around not overlapping
 }
 
 func (s *SpaceSet) Add(start net.IP, size uint32) {

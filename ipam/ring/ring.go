@@ -118,7 +118,6 @@ func (r *Ring) entry(i int) *entry {
 	i = i % len(r.Entries)
 	if i < 0 {
 		i += len(r.Entries)
-
 	}
 	return &r.Entries[i]
 }
