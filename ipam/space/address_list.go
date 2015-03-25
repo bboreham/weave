@@ -13,7 +13,6 @@ func (as addressList) Len() int           { return len(as) }
 func (as addressList) Less(i, j int) bool { return utils.Ip4int(as[i]) < utils.Ip4int(as[j]) }
 func (as addressList) Swap(i, j int)      { panic("Should never be swapping entries!") }
 
-
 // Maintain addresses in increasing order.
 func (aa *addressList) add(a net.IP) {
 	utils.Assert(sort.IsSorted(*aa), "address list must always be sorted")
@@ -31,7 +30,6 @@ func (aa *addressList) add(a net.IP) {
 	utils.Assert(sort.IsSorted(aa), "address list must always be sorted")
 }
 
-// Seems to be unused?
 func (aa *addressList) removeAt(pos int) {
 	// Delete, preserving order
 	(*aa) = append((*aa)[:pos], (*aa)[pos+1:]...)
