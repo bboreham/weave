@@ -66,11 +66,11 @@ func (m *mockGossipComms) String() string {
 
 func (m *mockGossipComms) GossipBroadcast(buf []byte) error {
 	if len(m.messages) == 0 {
-		wt.Fatalf(m.t, "%s: Gossip broadcast message unexpected: \n%x", m.name, buf)
+		m.Fatalf("%s: Gossip broadcast message unexpected: \n%x", m.name, buf)
 	} else if msg := m.messages[0]; msg.dst != router.UnknownPeerName {
-		wt.Fatalf(m.t, "%s: Expected Gossip message to %s but got broadcast", m.name, msg.dst)
+		m.Fatalf("%s: Expected Gossip message to %s but got broadcast", m.name, msg.dst)
 	} else if msg.buf != nil && !equalByteBuffer(msg.buf, buf) {
-		wt.Fatalf(m.t, "%s: Gossip message not sent as expected: \nwant: %x\ngot : %x", m.name, msg.buf, buf)
+		m.Fatalf("%s: Gossip message not sent as expected: \nwant: %x\ngot : %x", m.name, msg.buf, buf)
 	} else {
 		// Swallow this message
 		m.messages = m.messages[1:]
