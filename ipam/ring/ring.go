@@ -448,10 +448,12 @@ func (r *Ring) OwnedRanges() RangeSlice {
 
 		case nextEntry.Token <= entry.Token:
 			// We wrapped; want to split around 0
-			result[j] = Range{Start: utils.Intip4(entry.Token),
-				End: utils.Intip4(r.End)}
-			result[j+1] = Range{Start: utils.Intip4(r.Start),
+			// First shuffle everything up as we want results to be sorted
+			copy(result[1:j+1], result[:j])
+			result[0] = Range{Start: utils.Intip4(r.Start),
 				End: utils.Intip4(nextEntry.Token)}
+			result[j+1] = Range{Start: utils.Intip4(entry.Token),
+				End: utils.Intip4(r.End)}
 			j = j + 2
 
 		default:

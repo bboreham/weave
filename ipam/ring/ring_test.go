@@ -368,5 +368,5 @@ func TestOwnedRange(t *testing.T) {
 
 	ring2.Entries = []entry{{Token: middle, Peer: peer2name}}
 	wt.AssertTrue(t, ring2.OwnedRanges().Equal(
-		[]Range{{Start: ipMiddle, End: ipEnd}, {Start: ipStart, End: ipMiddle}}), "invalid")
+		[]Range{{Start: ipStart, End: ipMiddle}, {Start: ipMiddle, End: ipEnd}}), "invalid")
 }

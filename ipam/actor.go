@@ -165,6 +165,8 @@ func (alloc *Allocator) queryLoop(queryChan <-chan interface{}, withTimers bool)
 				}
 			case gossipBroadcast:
 				q.resultChan <- alloc.ring.OnGossipBroadcast(q.bytes)
+				alloc.considerNewSpaces()
+				alloc.assertInvariants()
 				alloc.considerOurPosition()
 			case gossipUpdate:
 				err := alloc.ring.OnGossipBroadcast(q.bytes)

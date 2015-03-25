@@ -186,3 +186,36 @@ func (alloc *Allocator) donateSpace(to router.PeerName) {
 	alloc.ring.GrantRangeToHost(start, end, to)
 	alloc.gossip.GossipBroadcast(alloc.ring.GossipState())
 }
+
+// considerNewSpaces iterates through ranges in the ring
+// and ensures we have spaces for them.  Its only ever adds
+// new spaces, as the invariants in the ring ensure we never
+// have spaces taken away from us against our will.
+func (alloc *Allocator) considerNewSpaces() {
+	ownedRanges := alloc.ring.OwnedRanges()
+	for _, r := range ownedRanges {
+		size := uint32(utils.Subtract(r.End, r.Start))
+		if !alloc.spaceSet.Exists(r.Start, size) {
+			alloc.Debugln("Found new space at", r.Start)
+			alloc.spaceSet.Add(r.Start, size)
+		}
+	}
+}
+
+func (alloc *Allocator) assertInvariants() {
+	// We need to ensure all ranges the ring thinks we own have
+	// a corresponding space in the space set, and vice versa
+	ranges := alloc.ring.OwnedRanges()
+	spaces := alloc.spaceSet.Spaces()
+
+	utils.Assert(len(ranges) == len(spaces), "Ring and SpaceSet are out of sync!")
+
+	for i := 0; i < len(ranges); i++ {
+		r := ranges[i]
+		s := spaces[i]
+
+		rSize := uint32(utils.Subtract(r.End, r.Start))
+		utils.Assert(s.Start.Equal(r.Start) && s.Size == rSize,
+			fmt.Sprintf("Range starting at %s out of sync with space set!", r.Start))
+	}
+}

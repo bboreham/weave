@@ -15,6 +15,10 @@ type SpaceSet struct {
 	spaces []*Space
 }
 
+func (s *SpaceSet) Spaces() []*Space {
+	return s.spaces
+}
+
 func (s *SpaceSet) String() string {
 	return s.describe("SpaceSet ")
 }
@@ -39,6 +43,10 @@ func (s *SpaceSet) Add(start net.IP, size uint32) {
 }
 
 func (s *SpaceSet) AddSpace(newspace *Space) {
+	// (Tom) this doesn't mesh with assumptions in the
+	// ring - they will be represented a different ranges,
+	// and the invariants in allocator with fail.
+	// If this safe to remove?
 	// See if we can merge this space with an existing space
 	for _, space := range s.spaces {
 		if space.mergeBlank(newspace) {
@@ -46,6 +54,18 @@ func (s *SpaceSet) AddSpace(newspace *Space) {
 		}
 	}
 	s.spaces = append(s.spaces, NewSpace(newspace.Start, newspace.Size))
+}
+
+func (s *SpaceSet) Exists(start net.IP, size uint32) bool {
+	// TODO consider keeping s.spaces sorted to make this
+	// quicker.
+	for _, space := range s.spaces {
+		if space.Start.Equal(start) && space.Size == size {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (s *SpaceSet) NumFreeAddresses() uint32 {
