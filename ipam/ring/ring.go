@@ -482,6 +482,7 @@ func (r *Ring) ClaimItAll() {
 
 	// We reserver the first and last address with a special range; this ensures
 	// they are never given out by anyone
+	// Per RFC1122, don't allocate the first (network) and last (broadcast) addresses
 	r.insertAt(0, entry{Token: r.Start + 1, Peer: r.Peername,
 		Free: r.End - r.Start - 2})
 	r.insertAt(1, entry{Token: r.End - 1, Peer: router.UnknownPeerName})
