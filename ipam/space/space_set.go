@@ -7,6 +7,7 @@ import (
 	lg "github.com/zettio/weave/common"
 	"github.com/zettio/weave/ipam/utils"
 	"net"
+	"sort"
 )
 
 const MaxAddressesToGiveUp = 256
@@ -14,6 +15,13 @@ const MaxAddressesToGiveUp = 256
 type SpaceSet struct {
 	spaces []*Space
 }
+
+// For compatibility with sort
+func (ss SpaceSet) Len() int { return len(ss.spaces) }
+func (ss SpaceSet) Less(i, j int) bool {
+	return utils.Ip4int(ss.spaces[i].Start) < utils.Ip4int(ss.spaces[j].Start)
+}
+func (ss SpaceSet) Swap(i, j int) { panic("Should never be swapping entries!") }
 
 func (s *SpaceSet) Spaces() []*Space {
 	return s.spaces
@@ -38,22 +46,27 @@ func NewSpaceSet() *SpaceSet {
 	return &SpaceSet{}
 }
 
+func (s *SpaceSet) assertInvariants() {
+	utils.Assert(sort.IsSorted(s), "space set must always be sorted")
+}
+
 func (s *SpaceSet) Add(start net.IP, size uint32) {
 	s.AddSpace(NewSpace(start, size))
 }
 
 func (s *SpaceSet) AddSpace(newspace *Space) {
-	// (Tom) this doesn't mesh with assumptions in the
-	// ring - they will be represented a different ranges,
-	// and the invariants in allocator with fail.
-	// If this safe to remove?
-	// See if we can merge this space with an existing space
-	for _, space := range s.spaces {
-		if space.mergeBlank(newspace) {
-			return
-		}
-	}
-	s.spaces = append(s.spaces, NewSpace(newspace.Start, newspace.Size))
+	s.assertInvariants()
+	defer s.assertInvariants()
+
+	i := sort.Search(len(s.spaces), func(j int) bool {
+		return utils.Ip4int(s.spaces[j].Start) >= utils.Ip4int(newspace.Start)
+	})
+
+	utils.Assert(i >= len(s.spaces) || !s.spaces[i].Start.Equal(newspace.Start), "inserting space into list already exists!")
+
+	s.spaces = append(s.spaces, &Space{}) // make space
+	copy(s.spaces[i+1:], s.spaces[i:])    // move up
+	s.spaces[i] = newspace                // put in new element
 }
 
 func (s *SpaceSet) Exists(start net.IP, size uint32) bool {
@@ -80,6 +93,9 @@ func (s *SpaceSet) NumFreeAddresses() uint32 {
 // Give up some space because one of our peers has asked for it.
 // Pick some large reasonably-sized chunk.
 func (s *SpaceSet) GiveUpSpace() (start net.IP, size uint32, ok bool) {
+	s.assertInvariants()
+	defer s.assertInvariants()
+
 	totalFreeAddresses := s.NumFreeAddresses()
 	if totalFreeAddresses == 0 {
 		return nil, 0, false
@@ -112,6 +128,9 @@ func (s *SpaceSet) GiveUpSpace() (start net.IP, size uint32, ok bool) {
 
 // If we can, give up the space requested and return true.
 func (s *SpaceSet) GiveUpSpecificSpace(start net.IP, size uint32) bool {
+	s.assertInvariants()
+	defer s.assertInvariants()
+
 	for i, space := range s.spaces {
 		if space.Contains(start) {
 			split1, split2 := space.Split(start)
@@ -125,10 +144,10 @@ func (s *SpaceSet) GiveUpSpecificSpace(start net.IP, size uint32) bool {
 				// Take out the old space, then add up to two new spaces.  Ordering of s.spaces is not important.
 				s.spaces = append(s.spaces[:i], s.spaces[i+1:]...)
 				if split1.Size > 0 {
-					s.spaces = append(s.spaces, split1)
+					s.AddSpace(split1)
 				}
 				if split3 != nil {
-					s.spaces = append(s.spaces, split3)
+					s.AddSpace(split3)
 				}
 				return true
 			} else {
