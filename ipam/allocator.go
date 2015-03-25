@@ -122,7 +122,8 @@ func (alloc *Allocator) electLeaderIfNecessary() {
 		// I'm the winner; take control of the whole universe
 		alloc.ring.ClaimItAll()
 		alloc.considerNewSpaces()
-		alloc.Infof("I was elected leader of the universe %s", alloc.string())
+		alloc.Infof("I was elected leader of the universe\n%s", alloc.string())
+		alloc.gossip.GossipBroadcast(alloc.ring.GossipState())
 		alloc.checkPending()
 	} else {
 		alloc.sendRequest(leader, msgLeaderElected)
