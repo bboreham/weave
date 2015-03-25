@@ -149,5 +149,6 @@ func (alloc *Allocator) actorLoop(actionChan <-chan interface{}, withTimers bool
 			}
 		}
 		alloc.assertInvariants()
+		alloc.reportFreeSpace()
 	}
 }

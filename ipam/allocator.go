@@ -221,6 +221,14 @@ func (alloc *Allocator) assertInvariants() {
 	}
 }
 
+func (alloc *Allocator) reportFreeSpace() {
+	spaces := alloc.spaceSet.Spaces()
+
+	for _, s := range spaces {
+		alloc.ring.ReportFree(s.Start, s.NumFreeAddresses())
+	}
+}
+
 func (alloc *Allocator) Errorln(args ...interface{}) {
 	lg.Error.Println(append([]interface{}{fmt.Sprintf("[allocator %s]:", alloc.ourName)}, args...)...)
 }
