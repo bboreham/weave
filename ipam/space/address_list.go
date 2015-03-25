@@ -54,10 +54,12 @@ func (aa *addressList) find(addr net.IP) int {
 }
 
 func (aa *addressList) take() net.IP {
-	if n := len(*aa); n > 0 {
-		ret := (*aa)[n-1]
-		*aa = (*aa)[:n-1]
-		return ret
+	if n := len(*aa); n <= 0 {
+		return nil
 	}
-	return nil
+
+	// Always give out the lowest free address
+	ret := (*aa)[0]
+	*aa = (*aa)[1:]
+	return ret
 }
