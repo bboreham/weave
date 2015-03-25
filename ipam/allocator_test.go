@@ -188,17 +188,6 @@ func (alloc *Allocator) EncodeState() []byte {
 	return alloc.ring.GossipState()
 }
 
-func (alloc *Allocator) EncodeClaimMsg(start string, size uint32) []byte {
-	// tbd
-	//claim := []Space{NewMinSpace(net.ParseIP(donateStart), donateSize)}
-	//return router.Concat(GobEncode(NewMinSpace(addr1, 1)), encode(alloc1.ourSpaceSet))
-	return nil
-}
-
-func (alloc *Allocator) decodeUpdate([]byte) {
-	// tbd
-}
-
 func (alloc *Allocator) AmendSpace(newSize int) {
 	// tbd
 	//alloc.ourSpaceSet.spaces[0].(*MutableSpace).MinSpace.Size = newSize
