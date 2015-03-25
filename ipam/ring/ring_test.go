@@ -52,13 +52,14 @@ func TestInsert(t *testing.T) {
 		ring.insertAt(0, entry{Token: start, Peer: peer1name})
 	})
 
+	ring.entry(0).Free = 0
 	ring.insertAt(1, entry{Token: dot245, Peer: peer1name})
 	ring2 := New(ipStart, ipEnd, peer1name)
-	ring2.Entries = []*entry{{Token: start, Peer: peer1name, Free: 255}, {Token: dot245, Peer: peer1name}}
+	ring2.Entries = []*entry{{Token: start, Peer: peer1name, Free: 0}, {Token: dot245, Peer: peer1name}}
 	wt.AssertEquals(t, ring, ring2)
 
 	ring.insertAt(1, entry{Token: dot10, Peer: peer1name})
-	ring2.Entries = []*entry{{Token: start, Peer: peer1name, Free: 255}, {Token: dot10, Peer: peer1name}, {Token: dot245, Peer: peer1name}}
+	ring2.Entries = []*entry{{Token: start, Peer: peer1name, Free: 0}, {Token: dot10, Peer: peer1name}, {Token: dot245, Peer: peer1name}}
 	wt.AssertEquals(t, ring, ring2)
 }
 
@@ -147,9 +148,9 @@ func TestGrantSplit(t *testing.T) {
 
 	// Now grant a split range to peer2
 	ring1.GrantRangeToHost(ipDot10, ipDot245, peer2name)
-	ring2.Entries = []*entry{{Token: start, Peer: peer1name, Version: 1, Free: 20},
+	ring2.Entries = []*entry{{Token: start, Peer: peer1name, Version: 1, Free: 10},
 		{Token: dot10, Peer: peer2name, Free: 235},
-		{Token: dot245, Peer: peer1name}}
+		{Token: dot245, Peer: peer1name, Free: 10}}
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 }
 

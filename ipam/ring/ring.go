@@ -76,6 +76,7 @@ var (
 	ErrInvalidEntry     = errors.New("Recieved invalid state update!")
 	ErrEntryInMyRange   = errors.New("Recieved new entry in my range!")
 	ErrNoFreeSpace      = errors.New("No free space found!")
+	ErrTooMuchFreeSpace = errors.New("Entry reporting too much free space!")
 )
 
 func (r *Ring) checkInvariants() error {
@@ -96,12 +97,23 @@ func (r *Ring) checkInvariants() error {
 		return nil
 	}
 
-	if r.Entries[0].Token < r.Start {
+	// Check tokens are in range
+	if r.entry(0).Token < r.Start {
 		return ErrTokenOutOfRange
 	}
 
-	if r.Entries[len(r.Entries)-1].Token >= r.End {
+	if r.entry(-1).Token >= r.End {
 		return ErrTokenOutOfRange
+	}
+
+	// Check all the freespaces are in range
+	for i, entry := range r.Entries {
+		next := r.entry(i+1)
+		distance := r.distance(entry.Token, next.Token)
+
+		if entry.Free > distance {
+			return ErrTooMuchFreeSpace
+		}
 	}
 
 	return nil
@@ -164,6 +176,14 @@ func (r *Ring) between(token uint32, i, j int) bool {
 	panic("Should never get here - switch covers all possibilities.")
 }
 
+func (r *Ring) distance(start, end uint32) uint32 {
+	if end > start {
+		return end - start
+	} else {
+		return (r.End - start) + (end - r.Start)
+	}
+}
+
 // Grant range [start, end) to peer
 // Note, due to wrapping, end can be less than start
 // TODO grant should calulate free correctly
@@ -175,8 +195,9 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	utils.Assert(r.Start < end && end <= r.End, "Trying to grant range outside of subnet")
 	utils.Assert(len(r.Entries) > 0, "Cannot grant if ring is empty!")
 
-	newFree := end - start      // How much space will the new range have?
-	splitRangeFree := uint32(0) // If I'm splitting a range I own at the end, how much was free in this range?
+	// How much space will the new range have?
+	var newFree = r.distance(start, end)
+	utils.Assert(newFree > 0, "Cannot create zero-sized ranges")
 
 	// Look for the start entry
 	i := sort.Search(len(r.Entries), func(j int) bool {
@@ -191,9 +212,6 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		entry.Peer = peer
 		entry.Tombstone = 0
 		entry.Version++
-
-		// How much
-		splitRangeFree = entry.Free - newFree
 		entry.Free = newFree
 	} else {
 		// Otherwise, these isn't a token here, we need to
@@ -203,7 +221,9 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 
 		previous := r.entry(j)
 		utils.Assert(previous.Peer == r.Peername, "Trying to mutate range I don't own")
-		previous.Free = previous.Free - newFree // Note in this case free might be too large (as we may be splitting an range)
+
+		// Reset free on previous token; may over estimate, but thats fine
+		previous.Free = r.distance(previous.Token, start)
 		previous.Version++
 
 		r.insertAt(i, entry{Token: start, Peer: peer, Free: newFree})
@@ -232,7 +252,8 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		return
 	} else {
 		utils.Assert(r.between(end, i, k), "End spans another token")
-		r.insertAt(k, entry{Token: end, Peer: r.Peername, Free: splitRangeFree})
+		distance := r.distance(end, r.entry(k).Token)
+		r.insertAt(k, entry{Token: end, Peer: r.Peername, Free: distance})
 		r.assertInvariants()
 	}
 }
@@ -540,6 +561,15 @@ func (r *Ring) ReportFree(startIP net.IP, free uint32) {
 
 	utils.Assert(i < len(r.Entries) && r.Entries[i].Token == start &&
 		r.Entries[i].Peer == r.Peername, "Trying to report free on space I don't own")
+
+	// Check we're not reporting more space than the range
+	entry, next := r.entry(i), r.entry(i+1)
+	maxSize := r.distance(entry.Token, next.Token)
+	utils.Assert(free <= maxSize, "Trying to report more free space than possible")
+
+	if r.Entries[i].Free == free {
+		return
+	}
 
 	r.Entries[i].Free = free
 	r.Entries[i].Version++
