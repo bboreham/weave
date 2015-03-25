@@ -435,6 +435,11 @@ func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
 			continue
 		}
 
+		// Don't talk to yourself
+		if entry.Peer == r.Peername {
+			continue
+		}
+
 		if sum, ok := totalSpacePerPeer[entry.Peer]; ok {
 			totalSpacePerPeer[entry.Peer] = sum + int(entry.Free)
 			numRangesPerPeer[entry.Peer] = numRangesPerPeer[entry.Peer] + 1
