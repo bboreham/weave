@@ -1,7 +1,6 @@
 package space
 
 import (
-	"github.com/zettio/weave/ipam/utils"
 	wt "github.com/zettio/weave/testing"
 	"net"
 	"testing"
@@ -17,36 +16,72 @@ func TestSpaceAllocate(t *testing.T) {
 
 	space1 := NewSpace(net.ParseIP(testAddr1), 20)
 	wt.AssertEqualUint32(t, space1.NumFreeAddresses(), 20, "Free addresses")
-	space1.checkInvariant(t)
+	space1.assertInvariants()
 
 	addr1 := space1.Allocate()
 	wt.AssertEqualString(t, addr1.String(), testAddr1, "address")
 	wt.AssertEqualUint32(t, space1.NumFreeAddresses(), 19, "Free addresses")
-	space1.checkInvariant(t)
+	space1.assertInvariants()
 
 	addr2 := space1.Allocate()
 	wt.AssertNotEqualString(t, addr2.String(), testAddr1, "address")
 	wt.AssertEqualUint32(t, space1.NumFreeAddresses(), 18, "Free addresses")
-	space1.checkInvariant(t)
+	space1.assertInvariants()
 
 	space1.Free(addr2)
+	space1.assertInvariants()
 
 	wt.AssertErrorInterface(t, space1.Free(addr2), (*error)(nil), "double free")
 	wt.AssertErrorInterface(t, space1.Free(net.ParseIP(testAddrx)), (*error)(nil), "address not allocated")
 	wt.AssertErrorInterface(t, space1.Free(net.ParseIP(testAddry)), (*error)(nil), "wrong out of range")
 
-	space1.checkInvariant(t)
+	space1.assertInvariants()
 }
 
-func (m *Space) checkInvariant(t *testing.T) {
-	if m.MaxAllocated > m.Size {
-		t.Fatalf("MaxAllocated must not be greater than size: %v", m)
+func TestSpaceFree(t *testing.T) {
+	const (
+		testAddr1   = "10.0.3.4"
+		testAddrx   = "10.0.3.19"
+		testAddry   = "10.0.9.19"
+		containerID = "deadbeef"
+	)
+
+	space := NewSpace(net.ParseIP(testAddr1), 20)
+	for i := 0; i < 20; i++ {
+		addr := space.Allocate()
+		wt.AssertTrue(t, addr != nil, "Failed to get address")
 	}
-	for i := 0; i < len(m.free_list)-1; i++ {
-		if utils.Subtract(m.free_list[i], m.free_list[i+1]) > 0 {
-			t.Fatalf("Free list out of order: %v", m.free_list)
-		}
-	}
+
+	// Check we are full
+	addr := space.Allocate()
+	wt.AssertTrue(t, addr == nil, "Should have failed to get address")
+	start, size := space.BiggestFreeChunk()
+	wt.AssertTrue(t, start == nil && size == 0, "Wrong space")
+
+	// Now free a few at the end
+	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.23")))
+	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.22")))
+	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.21")))
+
+	// These free should have shrunk the free list
+	wt.AssertTrue(t, space.MaxAllocated == 17, "Free list didn't shrink!")
+
+	// Now get the biggest free space; should be 3.21
+	start, size = space.BiggestFreeChunk()
+	wt.AssertTrue(t, start.Equal(net.ParseIP("10.0.3.21")) && size == 3, "Wrong space")
+
+	// Now free a few in the middle
+	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.13")))
+	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.12")))
+	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.11")))
+	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.10")))
+
+	// These free should not have shrunk the free list
+	wt.AssertTrue(t, space.MaxAllocated == 17, "Free list didn't shrink!")
+
+	// Now get the biggest free space; should be 3.21
+	start, size = space.BiggestFreeChunk()
+	wt.AssertTrue(t, start.Equal(net.ParseIP("10.0.3.10")) && size == 4, "Wrong space")
 }
 
 func TestSpaceSplit(t *testing.T) {
@@ -61,15 +96,15 @@ func TestSpaceSplit(t *testing.T) {
 	addr2 := space1.Allocate()
 	addr3 := space1.Allocate()
 	space1.Free(addr2)
-	space1.checkInvariant(t)
+	space1.assertInvariants()
 	split1, split2 := space1.Split(net.ParseIP(testAddr2))
 	wt.AssertEqualUint32(t, split1.Size, 2, "split size")
 	wt.AssertEqualUint32(t, split2.Size, 8, "split size")
 	wt.AssertEqualUint32(t, split1.NumFreeAddresses(), 1, "Free addresses")
 	wt.AssertEqualUint32(t, split2.NumFreeAddresses(), 7, "Free addresses")
-	space1.checkInvariant(t)
-	split1.checkInvariant(t)
-	split2.checkInvariant(t)
+	space1.assertInvariants()
+	split1.assertInvariants()
+	split2.assertInvariants()
 	wt.AssertNoErr(t, split1.Free(addr1))
 	wt.AssertErrorInterface(t, split1.Free(addr3), (*error)(nil), "free")
 	wt.AssertErrorInterface(t, split2.Free(addr1), (*error)(nil), "free")

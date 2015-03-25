@@ -4,18 +4,28 @@ import (
 	"fmt"
 	"github.com/zettio/weave/ipam/utils"
 	"net"
+	"sort"
 )
 
 type Space struct {
 	Start        net.IP
 	Size         uint32
 	MaxAllocated uint32 // 0 if nothing allocated, 1 if first address allocated, etc.
-	free_list    addressList
+	freelist     addressList
 }
 
-func (a *Space) Contains(addr net.IP) bool {
-	diff := utils.Subtract(addr, a.Start)
-	return diff >= 0 && diff < int64(a.Size)
+func (s *Space) assertInvariants() {
+	utils.Assert(s.MaxAllocated <= s.Size,
+		"MaxAllocated must not be greater than size")
+	utils.Assert(sort.IsSorted(s.freelist),
+		"Free address list must always be sorted")
+	utils.Assert(uint32(len(s.freelist)) <= s.MaxAllocated,
+		"Can't have more entries on free list than allocated.")
+}
+
+func (s *Space) Contains(addr net.IP) bool {
+	diff := utils.Subtract(addr, s.Start)
+	return diff >= 0 && diff < int64(s.Size)
 }
 
 func NewSpace(start net.IP, size uint32) *Space {
@@ -23,48 +33,129 @@ func NewSpace(start net.IP, size uint32) *Space {
 }
 
 func (space *Space) Allocate() net.IP {
-	ret := space.free_list.take()
-	if ret == nil && space.MaxAllocated < space.Size {
-		space.MaxAllocated++
-		ret = utils.Add(space.Start, space.MaxAllocated-1)
+	space.assertInvariants()
+	defer space.assertInvariants()
+
+	// First ask the free list; this will get
+	// the lowest availible address
+	if ret := space.freelist.take(); ret != nil {
+		return ret
 	}
-	return ret
+
+	// If nothing on the free list, have we given
+	// out all the addresses?
+	if space.MaxAllocated >= space.Size {
+		return nil
+	}
+
+	// Otherwise increase the number of address we have given
+	// out
+	space.MaxAllocated++
+	return utils.Add(space.Start, space.MaxAllocated-1)
+}
+
+func (space *Space) addrInRange(addr net.IP) bool {
+	offset := utils.Subtract(addr, space.Start)
+	return offset >= 0 && offset < int64(space.Size)
 }
 
 func (space *Space) Free(addr net.IP) error {
-	offset := utils.Subtract(addr, space.Start)
-	if !(offset >= 0 && offset < int64(space.Size)) {
+	space.assertInvariants()
+	defer space.assertInvariants()
+
+	if !space.addrInRange(addr) {
 		return fmt.Errorf("Free out of range: %s", addr)
-	} else if offset >= int64(space.MaxAllocated) {
+	}
+
+	offset := utils.Subtract(addr, space.Start)
+	if offset >= int64(space.MaxAllocated) {
 		return fmt.Errorf("IP address not allocated: %s", addr)
-	} else if space.free_list.find(addr) >= 0 {
+	}
+
+	if space.freelist.find(addr) >= 0 {
 		return fmt.Errorf("Duplicate free: %s", addr)
 	}
-	space.free_list.add(addr)
-	// TODO: consolidate free space
+	space.freelist.add(addr)
+	space.drainFreeList()
 	return nil
 }
 
-func (s *Space) BiggestFreeChunk() (net.IP, uint32) {
-	// Return some chunk, not necessarily _the_ biggest
-	if s.MaxAllocated < s.Size {
-		return utils.Add(s.Start, s.MaxAllocated), s.Size - s.MaxAllocated
-	} else if len(s.free_list) > 0 {
-		// Find how many contiguous addresses are at the head of the free list
-		size := 1
-		for ; size < len(s.free_list) && utils.Subtract(s.free_list[size], s.free_list[size-1]) == 1; size++ {
+// drainFreeList takes any contiguous addresses at the end
+// of the allocated address space and removes them from the
+// free list, reducing the allocated address space
+func (space *Space) drainFreeList() {
+	for len(space.freelist) > 0 {
+		end := len(space.freelist) - 1
+		potential := space.freelist[end]
+		offset := utils.Subtract(potential, space.Start)
+		utils.Assert(space.addrInRange(potential), "Free list contains address not in range")
+
+		// Is this potential address at the end of the allocated
+		// address space?
+		if offset != int64(space.MaxAllocated)-1 {
+			return
 		}
-		return s.free_list[0], uint32(size)
+
+		space.freelist.removeAt(end)
+		space.MaxAllocated--
 	}
-	return nil, 0
+}
+
+// BiggestFreeChunk scans the freelist and returns the
+// start, length of the largest free range of address it
+// can find.
+func (s *Space) BiggestFreeChunk() (net.IP, uint32) {
+	s.assertInvariants()
+	defer s.assertInvariants()
+
+	// First, drain the free list
+	s.drainFreeList()
+
+	// Keep a track of the current chunk start and size
+	// First chunk we've found is the one of unallocated space
+	chunkStart := utils.Add(s.Start, s.MaxAllocated)
+	chunkSize := s.Size - s.MaxAllocated
+
+	// Now scan the free list of other chunks
+	for i := 0; i < len(s.freelist); {
+		// We know we have a chunk of at least one
+		potentialStart := s.freelist[i]
+		potentialSize := uint32(1)
+
+		// Can we grow this chunk one by one
+		curr := s.freelist[i]
+		i++
+		for ; i < len(s.freelist); i++ {
+			if utils.Subtract(curr, s.freelist[i]) > 1 {
+				break
+			}
+
+			curr = s.freelist[i]
+			potentialSize++
+		}
+
+		// Is the chunk we found bigger than the
+		// one we already have?
+		if potentialSize > chunkSize {
+			chunkStart = potentialStart
+			chunkSize = potentialSize
+		}
+	}
+
+	// Now return what we found
+	if chunkSize > 0 {
+		return chunkStart, chunkSize
+	} else {
+		return nil, 0
+	}
 }
 
 func (s *Space) NumFreeAddresses() uint32 {
-	return s.Size - s.MaxAllocated + uint32(len(s.free_list))
+	return s.Size - s.MaxAllocated + uint32(len(s.freelist))
 }
 
 func (space *Space) String() string {
-	return fmt.Sprintf("%s+%d, %d/%d", space.Start, space.Size, space.MaxAllocated, len(space.free_list))
+	return fmt.Sprintf("%s+%d, %d/%d", space.Start, space.Size, space.MaxAllocated, len(space.freelist))
 }
 
 // Divide a space into two new spaces at a given address, copying allocations and frees.
@@ -86,15 +177,15 @@ func (space *Space) Split(addr net.IP) (*Space, *Space) {
 	}
 
 	// Now copy the free list, but omit anything above MaxAllocated in each case
-	for _, alloc := range space.free_list {
+	for _, alloc := range space.freelist {
 		offset := utils.Subtract(alloc, addr)
 		if offset < 0 {
 			if uint32(offset+breakpoint) < ret1.MaxAllocated {
-				ret1.free_list.add(alloc)
+				ret1.freelist.add(alloc)
 			}
 		} else {
 			if uint32(offset) < ret2.MaxAllocated {
-				ret2.free_list.add(alloc)
+				ret2.freelist.add(alloc)
 			}
 		}
 	}
