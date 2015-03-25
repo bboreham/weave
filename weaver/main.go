@@ -140,7 +140,7 @@ func main() {
 		allocCIDR = "10.0.1.0/24"
 	}
 	if allocCIDR != "" {
-		allocator, err = ipam.NewAllocator(ourName, router.Ourself.UID, allocCIDR)
+		allocator, err = ipam.NewAllocator(ourName, allocCIDR)
 		if err != nil {
 			log.Fatal(err)
 		}
