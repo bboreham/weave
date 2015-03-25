@@ -58,8 +58,17 @@ func TestSpaceFree(t *testing.T) {
 	start, size := space.BiggestFreeChunk()
 	wt.AssertTrue(t, start == nil && size == 0, "Wrong space")
 
-	// Now free a few at the end
+	// Free in the middle
+	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.13")))
+	start, size = space.BiggestFreeChunk()
+	wt.AssertTrue(t, start.Equal(net.ParseIP("10.0.3.13")) && size == 1, "Wrong space")
+
+	// Free one at the end
 	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.23")))
+	start, size = space.BiggestFreeChunk()
+	wt.AssertTrue(t, start.Equal(net.ParseIP("10.0.3.23")) && size == 1, "Wrong space")
+
+	// Now free a few at the end
 	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.22")))
 	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.21")))
 
@@ -71,7 +80,6 @@ func TestSpaceFree(t *testing.T) {
 	wt.AssertTrue(t, start.Equal(net.ParseIP("10.0.3.21")) && size == 3, "Wrong space")
 
 	// Now free a few in the middle
-	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.13")))
 	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.12")))
 	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.11")))
 	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.10")))
