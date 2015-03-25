@@ -6,6 +6,7 @@ import (
 	. "github.com/zettio/weave/common"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -49,6 +50,19 @@ func (alloc *Allocator) HandleHttp(mux *http.ServeMux) {
 				httpErrorAndLog(
 					Error, w, "No free addresses", http.StatusServiceUnavailable,
 					"No free addresses")
+			}
+		case "DELETE": // opposite of PUT for one specific address or all addresses
+			ident, ipStr, err := parseUrlWithIP(r.URL.Path)
+			if err != nil {
+				httpErrorAndLog(Warning, w, "Invalid request", http.StatusBadRequest, err.Error())
+			} else if ipStr == "*" {
+				alloc.DeleteRecordsFor(ident)
+			} else if ip := net.ParseIP(ipStr); ip == nil {
+				httpErrorAndLog(Warning, w, "Invalid IP", http.StatusBadRequest,
+					"Invalid IP in request: %s", ipStr)
+				return
+			} else if err = alloc.Free(ident, ip); err != nil {
+				httpErrorAndLog(Warning, w, "Invalid Free", http.StatusBadRequest, err.Error())
 			}
 		default:
 			http.Error(w, "Verb not handled", http.StatusBadRequest)

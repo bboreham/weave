@@ -6,8 +6,8 @@ import (
 	wt "github.com/zettio/weave/testing"
 	"io/ioutil"
 	"math/rand"
-	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -57,7 +57,7 @@ func TestHttp(t *testing.T) {
 	wt.AssertEqualString(t, cidr1a, testAddr1+netSuffix, "address")
 
 	// Now free the first one, and we should get it back when we ask
-	alloc.Free(containerID, net.ParseIP(testAddr1))
+	genHttp("DELETE", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
 	cidr3 := HttpGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container3))
 	wt.AssertEqualString(t, cidr3, testAddr1+netSuffix, "address")
 
@@ -70,15 +70,19 @@ func TestBadHttp(t *testing.T) {
 	var (
 		containerID = "deadbeef"
 		testCIDR1   = "10.0.0.0/8"
-		testAddr1   = "10.0.3.9"
 	)
 
 	alloc := testAllocator(t, "08:00:27:01:c3:9a", testCIDR1)
 	port := rand.Intn(10000) + 32768
 	fmt.Println("BadHttp test on port", port)
 	go ListenHttp(port, alloc)
+
+	ExpectBroadcastMessage(alloc, nil) // on leader election, broadcasts its state
+	cidr1 := HttpGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
+	parts := strings.Split(cidr1, "/")
+	testAddr1 := parts[0]
 	// Verb that's not handled
-	resp, err := genHttp("DELETE", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
+	resp, err := genHttp("PUT", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
 	wt.AssertNoErr(t, err)
 	wt.AssertStatus(t, resp.StatusCode, http.StatusBadRequest, "http response")
 	// Mis-spelled URL
