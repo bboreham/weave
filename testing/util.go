@@ -93,7 +93,6 @@ func AssertEquals(t *testing.T, a1, a2 interface{}) {
 	}
 }
 
-
 func AssertStatus(t *testing.T, got int, wanted int, desc string) {
 	if got != wanted {
 		Fatalf(t, "Expected %s %d but got %d", desc, wanted, got)
@@ -133,13 +132,19 @@ func AssertEmpty(t *testing.T, array interface{}, desc string) {
 	}
 }
 
-func AssertPanic(t *testing.T, f func ()) {
+func AssertSuccess(t *testing.T, err error) {
+	if err != nil {
+		Fatalf(t, "Expected success, got '%s'", err.Error())
+	}
+}
+
+func AssertPanic(t *testing.T, f func()) {
 	wrapper := func() (paniced bool) {
 		defer func() {
 			if err := recover(); err != nil {
 				paniced = true
 			}
-		} ()
+		}()
 
 		f()
 		return
