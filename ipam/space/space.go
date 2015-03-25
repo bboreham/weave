@@ -63,29 +63,6 @@ func (s *Space) NumFreeAddresses() uint32 {
 	return s.Size - s.MaxAllocated + uint32(len(s.free_list))
 }
 
-// Enlarge a space by merging in a blank space and return true
-// or return false if we cannot merge
-func (a *Space) mergeBlank(b *Space) bool {
-	diff := utils.Subtract(b.Start, a.Start)
-	if diff == int64(a.Size) { // b is directly after a
-		a.Size += b.Size
-		return true
-	} else if diff == -int64(b.Size) { // a is directly after b
-		a.Start = utils.Add(a.Start, -b.Size)
-		a.Size += b.Size
-		if a.MaxAllocated > 0 {
-			a.MaxAllocated += b.Size
-			addFree := make(addressList, b.Size)
-			for i := uint32(0); i < b.Size; i++ {
-				addFree[i] = utils.Add(a.Start, i)
-			}
-			a.free_list = append(addFree, a.free_list...)
-		}
-		return true
-	}
-	return false
-}
-
 func (space *Space) String() string {
 	return fmt.Sprintf("%s+%d, %d/%d", space.Start, space.Size, space.MaxAllocated, len(space.free_list))
 }
