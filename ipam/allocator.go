@@ -121,7 +121,8 @@ func (alloc *Allocator) electLeaderIfNecessary() {
 		// I'm the winner; take control of the whole universe
 		alloc.ring.ClaimItAll()
 		alloc.ring.ReportFree(alloc.universeStart, alloc.universeSize)
-		alloc.spaceSet.Add(alloc.universeStart, alloc.universeSize)
+		// Per RFC1122, don't allocate the first (network) and last (broadcast) addresses
+		alloc.spaceSet.Add(utils.Add(alloc.universeStart, 1), alloc.universeSize-2)
 		alloc.Infof("I was elected leader of the universe %s", alloc.string())
 		alloc.checkPending()
 	} else {
