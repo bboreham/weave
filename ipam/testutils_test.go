@@ -90,22 +90,22 @@ func equalByteBuffer(a, b []byte) bool {
 	return true
 }
 
-func (m *mockGossipComms) Fatal(format string, args ...interface{}) {
+func (m *mockGossipComms) Fatalf(format string, args ...interface{}) {
 	// this sometimes hangs: wt.Fatalf(m.t, args...)
 	panic(fmt.Sprintf(format, args...))
 }
 
 func (m *mockGossipComms) GossipUnicast(dstPeerName router.PeerName, buf []byte) error {
 	if len(m.messages) == 0 {
-		m.Fatal("%s: Gossip message to %s unexpected: \n%s", m.name, dstPeerName, buf)
+		m.Fatalf("%s: Gossip message to %s unexpected: \n%s", m.name, dstPeerName, buf)
 	} else if msg := m.messages[0]; msg.dst == router.UnknownPeerName {
-		m.Fatal("%s: Expected Gossip broadcast message but got dest %s", m.name, dstPeerName)
+		m.Fatalf("%s: Expected Gossip broadcast message but got dest %s", m.name, dstPeerName)
 	} else if msg.dst != dstPeerName {
-		m.Fatal("%s: Expected Gossip message to %s but got dest %s", m.name, msg.dst, dstPeerName)
+		m.Fatalf("%s: Expected Gossip message to %s but got dest %s", m.name, msg.dst, dstPeerName)
 	} else if buf[0] != msg.msgType {
-		m.Fatal("%s: Expected Gossip message of type %d but got type %d", m.name, msg.msgType, buf[0])
+		m.Fatalf("%s: Expected Gossip message of type %d but got type %d", m.name, msg.msgType, buf[0])
 	} else if msg.buf != nil && !equalByteBuffer(msg.buf, buf[1:]) {
-		m.Fatal("%s: Gossip message not sent as expected: \nwant: %x\ngot : %x", m.name, msg.buf, buf[1:])
+		m.Fatalf("%s: Gossip message not sent as expected: \nwant: %x\ngot : %x", m.name, msg.buf, buf[1:])
 	} else {
 		// Swallow this message
 		m.messages = m.messages[1:]
