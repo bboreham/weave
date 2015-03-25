@@ -18,6 +18,7 @@ import (
 	"sort"
 )
 
+// Represents entries around the ring
 type entry struct {
 	Token     uint32          // The start of this range
 	Peer      router.PeerName // Who owns this range
@@ -32,12 +33,26 @@ func (e1 *entry) Equal(e2 *entry) bool {
 }
 
 // For compatibility with sort.Interface
-type entries []entry
+type entries []*entry
 
 func (es entries) Len() int           { return len(es) }
 func (es entries) Less(i, j int) bool { return es[i].Token < es[j].Token }
 func (es entries) Swap(i, j int)      { panic("Should never be swapping entries!") }
 
+func (es entries) String() string {
+	var buffer bytes.Buffer
+	fmt.Fprintf(&buffer, "[")
+	for i, entry := range es {
+		fmt.Fprintf(&buffer, "%+v", *entry)
+		if i+1 < len(es) {
+			fmt.Fprintf(&buffer, " ")
+		}
+	}
+	fmt.Fprintf(&buffer, "]")
+	return buffer.String()
+}
+
+// Represents the ring itself
 type Ring struct {
 	Start, End uint32          // [min, max) tokens in this ring.  Due to wrapping, min == max (effectively)
 	Peername   router.PeerName // name of peer owning this ring instance
@@ -99,9 +114,9 @@ func (r *Ring) insertAt(i int, e entry) {
 		panic("Trying to insert an existing token!")
 	}
 
-	r.Entries = append(r.Entries, entry{})
+	r.Entries = append(r.Entries, &entry{})
 	copy(r.Entries[i+1:], r.Entries[i:])
-	r.Entries[i] = e
+	r.Entries[i] = &e
 
 	r.assertInvariants()
 }
@@ -111,7 +126,7 @@ func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
 	start, end := utils.Ip4int(startIP), utils.Ip4int(endIP)
 	utils.Assert(start <= end, "Start needs to be less than end!")
 
-	return &Ring{start, end, peer, make([]entry, 0)}
+	return &Ring{start, end, peer, make([]*entry, 0)}
 }
 
 func (r *Ring) entry(i int) *entry {
@@ -119,7 +134,7 @@ func (r *Ring) entry(i int) *entry {
 	if i < 0 {
 		i += len(r.Entries)
 	}
-	return &r.Entries[i]
+	return r.Entries[i]
 }
 
 // Is token between entries at i and j?
@@ -160,6 +175,9 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	utils.Assert(r.Start < end && end <= r.End, "Trying to grant range outside of subnet")
 	utils.Assert(len(r.Entries) > 0, "Cannot grant if ring is empty!")
 
+	newFree := end - start      // How much space will the new range have?
+	splitRangeFree := uint32(0) // If I'm splitting a range I own at the end, how much was free in this range?
+
 	// Look for the start entry
 	i := sort.Search(len(r.Entries), func(j int) bool {
 		return r.Entries[j].Token >= start
@@ -168,20 +186,27 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	// Is start already owned by us, in which case we need
 	// to change the token and update version
 	if i < len(r.Entries) && r.Entries[i].Token == start {
-		entry := &r.Entries[i]
+		entry := r.Entries[i]
 		utils.Assert(entry.Peer == r.Peername, "Trying to mutate entry I don't own")
 		entry.Peer = peer
 		entry.Tombstone = 0
 		entry.Version++
+
+		// How much
+		splitRangeFree = entry.Free - newFree
+		entry.Free = newFree
 	} else {
 		// Otherwise, these isn't a token here, we need to
 		// find the preceeding token and check we own it (being careful for wrapping)
 		j := i - 1
 		utils.Assert(r.between(start, j, i), "??")
+
 		previous := r.entry(j)
 		utils.Assert(previous.Peer == r.Peername, "Trying to mutate range I don't own")
+		previous.Free = previous.Free - newFree // Note in this case free might be too large (as we may be splitting an range)
+		previous.Version++
 
-		r.insertAt(i, entry{Token: start, Peer: peer})
+		r.insertAt(i, entry{Token: start, Peer: peer, Free: newFree})
 	}
 
 	r.assertInvariants()
@@ -207,7 +232,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		return
 	} else {
 		utils.Assert(r.between(end, i, k), "End spans another token")
-		r.insertAt(k, entry{Token: end, Peer: r.Peername})
+		r.insertAt(k, entry{Token: end, Peer: r.Peername, Free: splitRangeFree})
 		r.assertInvariants()
 	}
 }
@@ -237,8 +262,11 @@ func (r *Ring) merge(gossip Ring) error {
 	// abouts.  Assertions below would fail as it would appear
 	// other nodes are gossiping tokens in ranges we own.
 	if len(r.Entries) == 0 {
-		r.Entries = make([]entry, len(gossip.Entries))
-		copy(r.Entries, gossip.Entries)
+		r.Entries = make([]*entry, len(gossip.Entries))
+		for i := range r.Entries {
+			r.Entries[i] = new(entry)
+			*r.Entries[i] = *gossip.Entries[i]
+		}
 		return nil
 	}
 
@@ -286,7 +314,7 @@ func (r *Ring) merge(gossip Ring) error {
 	// Owner is the owner of the largest token
 	// We know are ring isn't empty at this point.
 	var currentOwner router.PeerName
-	last := func(es []entry) entry { return es[len(es)-1] }
+	last := func(es []*entry) *entry { return es[len(es)-1] }
 	if last(r.Entries).Token > last(gossip.Entries).Token {
 		currentOwner = last(r.Entries).Peer
 	} else {
@@ -299,7 +327,8 @@ func (r *Ring) merge(gossip Ring) error {
 		if currentOwner == r.Peername {
 			return ErrEntryInMyRange
 		}
-		result[k] = gossip.Entries[j]
+		// Don't copy the pointer, copy the real entry!
+		result[k] = *gossip.Entries[j]
 		j++
 
 		// Don't update current owner if we've consumed a
@@ -312,7 +341,7 @@ func (r *Ring) merge(gossip Ring) error {
 
 	// Consumes an entry from our local state
 	consumeLocal := func(k int) {
-		result[k] = r.Entries[i]
+		result[k] = *r.Entries[i]
 		i++
 		currentOwner = result[k].Peer
 	}
@@ -320,7 +349,7 @@ func (r *Ring) merge(gossip Ring) error {
 	// Merges an entry from the gossiped ring
 	// with our state
 	consumeBoth := func(k int) error {
-		entry, remote, err := mergeEntry(r.Entries[i], gossip.Entries[j])
+		entry, remote, err := mergeEntry(*r.Entries[i], *gossip.Entries[j])
 		if err != nil {
 			return err
 		} else {
@@ -368,7 +397,10 @@ func (r *Ring) merge(gossip Ring) error {
 	}
 	utils.Assert(i == len(r.Entries) && j == len(gossip.Entries), "WTF")
 
-	r.Entries = result
+	r.Entries = make([]*entry, len(tokens))
+	for k := range result {
+		r.Entries[k] = &result[k]
+	}
 	r.assertInvariants()
 	return nil
 }
