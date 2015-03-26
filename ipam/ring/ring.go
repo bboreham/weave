@@ -72,9 +72,9 @@ var (
 	ErrTokenRepeated    = errors.New("Token appears twice in ring")
 	ErrTokenOutOfRange  = errors.New("Token is out of range")
 	ErrDifferentSubnets = errors.New("Cannot merge gossip for different subnet!")
-	ErrNewerVersion     = errors.New("Recieved new version for entry I own!")
-	ErrInvalidEntry     = errors.New("Recieved invalid state update!")
-	ErrEntryInMyRange   = errors.New("Recieved new entry in my range!")
+	ErrNewerVersion     = errors.New("Received new version for entry I own!")
+	ErrInvalidEntry     = errors.New("Received invalid state update!")
+	ErrEntryInMyRange   = errors.New("Received new entry in my range!")
 	ErrNoFreeSpace      = errors.New("No free space found!")
 	ErrTooMuchFreeSpace = errors.New("Entry reporting too much free space!")
 )
@@ -108,7 +108,7 @@ func (r *Ring) checkInvariants() error {
 
 	// Check all the freespaces are in range
 	for i, entry := range r.Entries {
-		next := r.entry(i+1)
+		next := r.entry(i + 1)
 		distance := r.distance(entry.Token, next.Token)
 
 		if entry.Free > distance {
@@ -232,14 +232,14 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	r.assertInvariants()
 
 	// Now we need to deal with the end token.  There are 3 cases:
-	//   i.   the next token is equals to the end of the range
+	//   i.   the next token is equal to the end of the range
 	//        => we don't need to do anything
 	//   ii.  the end is between this token and the next,
 	//        => we need to insert a token such that
 	//        we claim this bit on the end.
 	//   iii. the end is not between this token and next
 	//        => this is an error, we'll be splitting someone
-	//        elses ranges.
+	//        else's ranges.
 
 	k := i + 1
 	nextEntry := r.entry(k)
@@ -367,8 +367,7 @@ func (r *Ring) merge(gossip Ring) error {
 		currentOwner = result[k].Peer
 	}
 
-	// Merges an entry from the gossiped ring
-	// with our state
+	// Merges an entry from the gossiped ring with our state
 	consumeBoth := func(k int) error {
 		entry, remote, err := mergeEntry(*r.Entries[i], *gossip.Entries[j])
 		if err != nil {
@@ -532,7 +531,7 @@ func (r *Ring) OwnedRanges() RangeSlice {
 func (r *Ring) ClaimItAll() {
 	utils.Assert(len(r.Entries) == 0, "Cannot bootstrap ring with entries in it!")
 
-	// We reserver the first and last address with a special range; this ensures
+	// We reserve the first and last address with a special range; this ensures
 	// they are never given out by anyone
 	// Per RFC1122, don't allocate the first (network) and last (broadcast) addresses
 	r.insertAt(0, entry{Token: r.Start + 1, Peer: r.Peername,
