@@ -263,6 +263,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 // Merge the given ring into this ring.
 func (r *Ring) merge(gossip Ring) error {
 	r.assertInvariants()
+	defer r.assertInvariants()
 
 	// Don't panic when checking the gossiped in ring.
 	// In this case just return any error found.
@@ -274,156 +275,63 @@ func (r *Ring) merge(gossip Ring) error {
 		return ErrDifferentSubnets
 	}
 
-	// Special case gossip ring being empty - not much to do...
-	if len(gossip.Entries) == 0 {
-		return nil
-	}
+	var result entries
+	addToResult := func(e entry) { result = append(result, &e) }
 
-	// We special case us having an empty ring -
-	// in this case we might be coming up in an existing
-	// network and be given some ranges we might have forgotten
-	// abouts.  Assertions below would fail as it would appear
-	// other nodes are gossiping tokens in ranges we own.
-	if len(r.Entries) == 0 {
-		r.Entries = make([]*entry, len(gossip.Entries))
-		for i := range r.Entries {
-			r.Entries[i] = new(entry)
-			*r.Entries[i] = *gossip.Entries[i]
-		}
-		return nil
-	}
-
-	// First count number of distinct tokens to build the result with
-	tokens := make(map[uint32]bool)
-	for _, entry := range r.Entries {
-		tokens[entry.Token] = true
-	}
-	for _, entry := range gossip.Entries {
-		tokens[entry.Token] = true
-	}
-
-	// mergeEntry merges two entries with the same token
-	// returns the merged entry, flag indicating if this was
-	// from the gossiped ring, and an error
-	mergeEntry := func(existingEntry, newEntry entry) (entry, bool, error) {
-		utils.Assert(existingEntry.Token == newEntry.Token, "WTF")
+	var mine, theirs *entry
+	// i is index into r.Entries; j is index into gossip.Entries
+	var i, j int
+	for i < len(r.Entries) && j < len(gossip.Entries) {
+		mine, theirs = r.Entries[i], gossip.Entries[j]
 		switch {
-		case existingEntry.Version == newEntry.Version:
-			if !existingEntry.Equal(&newEntry) {
-				return entry{}, false, ErrInvalidEntry
+		case mine.Token < theirs.Token:
+			addToResult(*mine)
+			i++
+		case mine.Token > theirs.Token:
+			// insert, checking that a range owned by us hasn't been split
+			if r.entry(i-1).Peer == r.Peername && theirs.Peer != r.Peername {
+				return ErrEntryInMyRange
 			}
-			return existingEntry, false, nil
-
-		case existingEntry.Version < newEntry.Version:
-			// A new token it getting inserted
-			if existingEntry.Peer == r.Peername {
-				return entry{}, false, ErrNewerVersion
+			addToResult(*theirs)
+			j++
+		case mine.Token == theirs.Token:
+			// merge
+			switch {
+			case mine.Version > theirs.Version:
+				addToResult(*mine)
+			case mine.Version == theirs.Version:
+				if !mine.Equal(theirs) {
+					return ErrInvalidEntry
+				}
+				addToResult(*mine)
+			case mine.Version < theirs.Version:
+				if mine.Peer == r.Peername { // We shouldn't receive updates to our own tokens
+					return ErrNewerVersion
+				}
+				addToResult(*theirs)
 			}
-			return newEntry, true, nil
-
-		case existingEntry.Version > newEntry.Version:
-			return existingEntry, false, nil
+			i++
+			j++
 		}
-
-		panic("Should never get here - switch covers all possibilities.")
 	}
 
-	// Make new slice for result; iterate over
-	// existing state and new state merging into
-	// result and checking for invariants.
-	result := make([]entry, len(tokens))
-	i, j := 0, 0
+	// At this point, either i is at the end of r or j is at the end
+	// of gossip, so copy over the remaining entries.
 
-	// Owner is the owner of the largest token
-	// We know are ring isn't empty at this point.
-	var currentOwner router.PeerName
-	last := func(es []*entry) *entry { return es[len(es)-1] }
-	if last(r.Entries).Token > last(gossip.Entries).Token {
-		currentOwner = last(r.Entries).Peer
-	} else {
-		currentOwner = last(gossip.Entries).Peer
+	for ; i < len(r.Entries); i++ {
+		mine = r.Entries[i]
+		addToResult(*mine)
 	}
 
-	// Consumes an entry from the gossiped ring
-	// and puts it in out ring at k
-	consumeGossip := func(k int) error {
-		if currentOwner == r.Peername {
+	for ; j < len(gossip.Entries); j++ {
+		theirs = gossip.Entries[j]
+		if mine != nil && mine.Peer == r.Peername && theirs.Peer != r.Peername {
 			return ErrEntryInMyRange
 		}
-		// Don't copy the pointer, copy the real entry!
-		result[k] = *gossip.Entries[j]
-		j++
-
-		// Don't update current owner if we've consumed a
-		// gossip entry, as we might have been given some
-		// space, and this would cause us to reject the
-		// next token
-		currentOwner = router.UnknownPeerName
-		return nil
+		addToResult(*theirs)
 	}
 
-	// Consumes an entry from our local state
-	consumeLocal := func(k int) {
-		result[k] = *r.Entries[i]
-		i++
-		currentOwner = result[k].Peer
-	}
-
-	// Merges an entry from the gossiped ring with our state
-	consumeBoth := func(k int) error {
-		entry, remote, err := mergeEntry(*r.Entries[i], *gossip.Entries[j])
-		if err != nil {
-			return err
-		}
-
-		result[k] = entry
-		i++
-		j++
-
-		// Don't update current owner if we've consumed a
-		// gossip entry, as we might have been given some
-		// space, and this would cause us to reject the
-		// next token
-		if !remote {
-			currentOwner = result[k].Peer
-		} else {
-			currentOwner = router.UnknownPeerName
-		}
-		return nil
-	}
-
-	for k := range result {
-		// Ordering of cases is important here!
-		switch {
-		case i >= len(r.Entries):
-			if err := consumeGossip(k); err != nil {
-				return err
-			}
-
-		case j >= len(gossip.Entries):
-			consumeLocal(k)
-
-		case r.Entries[i].Token > gossip.Entries[j].Token:
-			if err := consumeGossip(k); err != nil {
-				return err
-			}
-
-		case r.Entries[i].Token < gossip.Entries[j].Token:
-			consumeLocal(k)
-
-		case r.Entries[i].Token == gossip.Entries[j].Token:
-			if err := consumeBoth(k); err != nil {
-				return err
-			}
-		}
-	}
-	utils.Assert(i == len(r.Entries) && j == len(gossip.Entries), "WTF")
-
-	r.Entries = make([]*entry, len(tokens))
-	for k := range result {
-		r.Entries[k] = &result[k]
-	}
-	r.assertInvariants()
+	r.Entries = result
 	return nil
 }
 
