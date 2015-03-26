@@ -462,24 +462,6 @@ type Range struct {
 
 type RangeSlice []Range
 
-func (r1 Range) Equal(r2 Range) bool {
-	return r1.Start.Equal(r2.Start) && r1.End.Equal(r2.End)
-}
-
-func (rs1 RangeSlice) Equal(rs2 []Range) bool {
-	if len(rs1) != len(rs2) {
-		return false
-	}
-
-	for i := 0; i < len(rs1); i++ {
-		if !rs1[i].Equal(rs2[i]) {
-			return false
-		}
-	}
-
-	return true
-}
-
 // Return slice of Ranges indicating which
 // ranges are owned by this peer.
 func (r *Ring) OwnedRanges() RangeSlice {

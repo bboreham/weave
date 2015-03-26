@@ -381,6 +381,24 @@ func TestSplitRangeAtBeginning(t *testing.T) {
 	wt.AssertSuccess(t, ring2.merge(*ring1))
 }
 
+func (r1 Range) Equal(r2 Range) bool {
+	return r1.Start.Equal(r2.Start) && r1.End.Equal(r2.End)
+}
+
+func (rs1 RangeSlice) Equal(rs2 []Range) bool {
+	if len(rs1) != len(rs2) {
+		return false
+	}
+
+	for i := 0; i < len(rs1); i++ {
+		if !rs1[i].Equal(rs2[i]) {
+			return false
+		}
+	}
+
+	return true
+}
+
 func TestOwnedRange(t *testing.T) {
 	ring1 := New(ipStart, ipEnd, peer1name)
 	ring1.ClaimItAll()
