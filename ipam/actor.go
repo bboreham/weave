@@ -125,8 +125,8 @@ func (alloc *Allocator) actorLoop(actionChan <-chan func(), withTimers bool) {
 	// FIXME: not doing any timers at the moment.
 	for {
 		select {
-		case action, ok := <-actionChan:
-			if !ok || action == nil {
+		case action := <-actionChan:
+			if action == nil {
 				return
 			}
 			action()
