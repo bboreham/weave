@@ -126,6 +126,12 @@ func TestElection(t *testing.T) {
 	CheckAllExpectedMessagesSent(alloc1, alloc2)
 }
 
+func (alloc *Allocator) sleepForTesting(d time.Duration) {
+	alloc.actionChan <- func() {
+		time.Sleep(d)
+	}
+}
+
 func TestCancel(t *testing.T) {
 	//common.InitDefaultLogging(true)
 	const (
@@ -157,9 +163,9 @@ func TestCancel(t *testing.T) {
 		wt.Fatalf(t, "Error: got same ips!")
 	}
 
-	// Now we're going to stop alloc2 and ask alloc1
+	// Now we're going to pause alloc2 and ask alloc1
 	// for an allocation
-	alloc2.Stop()
+	alloc2.sleepForTesting(500 * time.Millisecond)
 	time.Sleep(100 * time.Millisecond)
 
 	// Use up all the IPs that alloc1 owns, so the allocation after this will prompt a request to alloc2
@@ -182,6 +188,7 @@ func TestCancel(t *testing.T) {
 	if !flag {
 		wt.Fatalf(t, "Error: got non-nil result from GetFor")
 	}
+	alloc2.String() // see if it's still operating.
 }
 
 // Placeholders for test methods that touch the internals of Allocator
