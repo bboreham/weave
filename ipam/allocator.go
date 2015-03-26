@@ -176,6 +176,13 @@ func (alloc *Allocator) sendRequest(dest router.PeerName, kind byte) {
 }
 
 func (alloc *Allocator) donateSpace(to router.PeerName) {
+	// No matter what we do, we'll send a unicast gossip
+	// of our ring back to tha chap who asked for space.
+	// This serves to both tell him of any space we might
+	// have given him, or tell him where he might find some
+	// more.
+	defer alloc.sendRequest(to, msgGossip)
+
 	alloc.Debugln("Peer", to, "asked me for space")
 	start, size, ok := alloc.spaceSet.GiveUpSpace()
 	if !ok {
@@ -188,7 +195,6 @@ func (alloc *Allocator) donateSpace(to router.PeerName) {
 	end := utils.Intip4(utils.Ip4int(start) + size)
 	alloc.Debugln("Giving range", start, end, size, "to", to)
 	alloc.ring.GrantRangeToHost(start, end, to)
-	alloc.sendRequest(to, msgGossip)
 }
 
 // considerNewSpaces iterates through ranges in the ring

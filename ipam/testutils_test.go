@@ -242,7 +242,7 @@ func (grouter *TestGossipRouter) connect(sender router.PeerName, gossiper router
 	gossipChan := make(chan gossipMessage, 100)
 
 	go func() {
-		gossipTimer := time.Tick(time.Second)
+		gossipTimer := time.Tick(10 * time.Second)
 		for {
 			select {
 			case message := <-gossipChan:
