@@ -187,7 +187,6 @@ func (r *Ring) distance(start, end uint32) uint32 {
 // GrantRangeToHost modifies the ring such that range [start, end)
 // is assigned to peer.  This may insert upto two new tokens.
 // Note, due to wrapping, end can be less than start
-// TODO grant should calulate free correctly
 func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	r.assertInvariants()
 
