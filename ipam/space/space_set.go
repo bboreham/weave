@@ -17,7 +17,7 @@ type Set struct {
 // For compatibility with sort
 func (s Set) Len() int { return len(s.spaces) }
 func (s Set) Less(i, j int) bool {
-	return utils.Ip4int(s.spaces[i].Start) < utils.Ip4int(s.spaces[j].Start)
+	return utils.IP4int(s.spaces[i].Start) < utils.IP4int(s.spaces[j].Start)
 }
 func (s Set) Swap(i, j int) { panic("Should never be swapping entries!") }
 
@@ -52,7 +52,7 @@ func (s *Set) AddSpace(newspace Space) {
 	defer s.assertInvariants()
 
 	i := sort.Search(len(s.spaces), func(j int) bool {
-		return utils.Ip4int(s.spaces[j].Start) >= utils.Ip4int(newspace.Start)
+		return utils.IP4int(s.spaces[j].Start) >= utils.IP4int(newspace.Start)
 	})
 
 	utils.Assert(i >= len(s.spaces) || !s.spaces[i].Start.Equal(newspace.Start), "inserting space into list already exists!")

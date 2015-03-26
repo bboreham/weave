@@ -218,8 +218,8 @@ type TestGossipRouter struct {
 	loss        float32 // 0.0 means no loss
 }
 
-func (router *TestGossipRouter) GossipBroadcast(buf []byte) error {
-	for _, gossipChan := range router.gossipChans {
+func (grouter *TestGossipRouter) GossipBroadcast(buf []byte) error {
+	for _, gossipChan := range grouter.gossipChans {
 		select {
 		case gossipChan <- gossipMessage{false, nil, buf}:
 		default: // drop the message if we cannot send it
@@ -228,9 +228,9 @@ func (router *TestGossipRouter) GossipBroadcast(buf []byte) error {
 	return nil
 }
 
-func (client *TestGossipRouter) LeaderElect() router.PeerName {
+func (grouter *TestGossipRouter) LeaderElect() router.PeerName {
 	var highest router.PeerName
-	for name := range client.gossipChans {
+	for name := range grouter.gossipChans {
 		if highest < name {
 			highest = name
 		}

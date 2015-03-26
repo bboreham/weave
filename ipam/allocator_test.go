@@ -248,7 +248,7 @@ func BenchmarkAllocator(b *testing.B) {
 	state := make(map[string]result)
 	// Keep a list of addresses issued, so we
 	// Can pick random ones
-	addrs := make([]string, 0)
+	var addrs []string
 	numPending := 0
 
 	rand.Seed(0)

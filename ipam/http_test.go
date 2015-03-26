@@ -2,17 +2,19 @@ package ipam
 
 import (
 	"fmt"
-	"github.com/zettio/weave/common"
-	wt "github.com/zettio/weave/testing"
+	"io"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/zettio/weave/common"
+	wt "github.com/zettio/weave/testing"
 )
 
-func HttpGet(t *testing.T, url string) string {
+func HTTPGet(t *testing.T, url string) string {
 	resp, err := http.Get(url)
 	wt.AssertNoErr(t, err)
 	wt.AssertStatus(t, resp.StatusCode, http.StatusOK, "http response")
@@ -21,9 +23,25 @@ func HttpGet(t *testing.T, url string) string {
 	return string(body)
 }
 
-func genHttp(method string, url string) (resp *http.Response, err error) {
+func getHTTP(method string, url string) (resp *http.Response, err error) {
 	req, _ := http.NewRequest(method, url, nil)
 	return http.DefaultClient.Do(req)
+}
+
+func listenHTTP(port int, alloc *Allocator) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, fmt.Sprintln(alloc))
+	})
+	alloc.HandleHTTP(mux)
+
+	srv := &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: mux,
+	}
+	if err := srv.ListenAndServe(); err != nil {
+		common.Error.Fatal("Unable to create http listener: ", err)
+	}
 }
 
 func TestHttp(t *testing.T) {
@@ -39,26 +57,26 @@ func TestHttp(t *testing.T) {
 	alloc := testAllocator(t, "08:00:27:01:c3:9a", testCIDR1)
 	port := rand.Intn(10000) + 32768
 	fmt.Println("Http test on port", port)
-	go ListenHttp(port, alloc)
+	go listenHTTP(port, alloc)
 
 	time.Sleep(100 * time.Millisecond) // Allow for http server to get going
 
 	ExpectBroadcastMessage(alloc, nil) // on leader election, broadcasts its state
 	// Ask the http server for a new address
-	cidr1 := HttpGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
+	cidr1 := HTTPGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
 	wt.AssertEqualString(t, cidr1, testAddr1+netSuffix, "address")
 
 	// Ask the http server for another address and check it's different
-	cidr2 := HttpGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container2))
+	cidr2 := HTTPGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container2))
 	wt.AssertNotEqualString(t, cidr2, testAddr1+netSuffix, "address")
 
 	// Ask for the first container again and we should get the same address again
-	cidr1a := HttpGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
+	cidr1a := HTTPGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
 	wt.AssertEqualString(t, cidr1a, testAddr1+netSuffix, "address")
 
 	// Now free the first one, and we should get it back when we ask
-	genHttp("DELETE", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
-	cidr3 := HttpGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container3))
+	getHTTP("DELETE", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
+	cidr3 := HTTPGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container3))
 	wt.AssertEqualString(t, cidr3, testAddr1+netSuffix, "address")
 
 	// Would like to shut down the http server at the end of this test
@@ -75,33 +93,33 @@ func TestBadHttp(t *testing.T) {
 	alloc := testAllocator(t, "08:00:27:01:c3:9a", testCIDR1)
 	port := rand.Intn(10000) + 32768
 	fmt.Println("BadHttp test on port", port)
-	go ListenHttp(port, alloc)
+	go listenHTTP(port, alloc)
 
 	ExpectBroadcastMessage(alloc, nil) // on leader election, broadcasts its state
-	cidr1 := HttpGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
+	cidr1 := HTTPGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
 	parts := strings.Split(cidr1, "/")
 	testAddr1 := parts[0]
 	// Verb that's not handled
-	resp, err := genHttp("PUT", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
+	resp, err := getHTTP("PUT", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
 	wt.AssertNoErr(t, err)
 	wt.AssertStatus(t, resp.StatusCode, http.StatusBadRequest, "http response")
 	// Mis-spelled URL
-	resp, err = genHttp("GET", fmt.Sprintf("http://localhost:%d/xip/%s/", port, containerID))
+	resp, err = getHTTP("GET", fmt.Sprintf("http://localhost:%d/xip/%s/", port, containerID))
 	wt.AssertNoErr(t, err)
 	wt.AssertStatus(t, resp.StatusCode, http.StatusNotFound, "http response")
 	// Malformed URL
-	resp, err = genHttp("GET", fmt.Sprintf("http://localhost:%d/ip/%s/foo/bar/baz", port, containerID))
+	resp, err = getHTTP("GET", fmt.Sprintf("http://localhost:%d/ip/%s/foo/bar/baz", port, containerID))
 	wt.AssertNoErr(t, err)
 	wt.AssertStatus(t, resp.StatusCode, http.StatusBadRequest, "http response")
 }
 
-func TestHttpCancel(t *testing.T) {
+func TestHTTPCancel(t *testing.T) {
 	wt.RunWithTimeout(t, 2*time.Second, func() {
-		impTestHttpCancel(t)
+		impTestHTTPCancel(t)
 	})
 }
 
-func impTestHttpCancel(t *testing.T) {
+func impTestHTTPCancel(t *testing.T) {
 	common.InitDefaultLogging(true)
 	var (
 		containerID = "deadbeef"
@@ -111,7 +129,7 @@ func impTestHttpCancel(t *testing.T) {
 	alloc := testAllocator(t, "08:00:27:01:c3:9a", testCIDR1)
 	port := rand.Intn(10000) + 32768
 	fmt.Println("Http test on port", port)
-	go ListenHttp(port, alloc)
+	go listenHTTP(port, alloc)
 
 	time.Sleep(100 * time.Millisecond) // Allow for http server to get going
 

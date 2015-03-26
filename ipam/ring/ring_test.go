@@ -19,11 +19,11 @@ var (
 	ipDot250                = net.ParseIP("10.0.0.250")
 	ipMiddle                = net.ParseIP("10.0.0.128")
 
-	start, end          = utils.Ip4int(ipStart), utils.Ip4int(ipEnd)
-	startPlus, endMinus = utils.Ip4int(ipStartPlus), utils.Ip4int(ipEndMinus)
-	dot10, dot245       = utils.Ip4int(ipDot10), utils.Ip4int(ipDot245)
-	dot250              = utils.Ip4int(ipDot250)
-	middle              = utils.Ip4int(ipMiddle)
+	start, end          = utils.IP4int(ipStart), utils.IP4int(ipEnd)
+	startPlus, endMinus = utils.IP4int(ipStartPlus), utils.IP4int(ipEndMinus)
+	dot10, dot245       = utils.IP4int(ipDot10), utils.IP4int(ipDot245)
+	dot250              = utils.IP4int(ipDot250)
+	middle              = utils.IP4int(ipMiddle)
 )
 
 func TestInvariants(t *testing.T) {
@@ -72,7 +72,7 @@ func TestBetween(t *testing.T) {
 	// First off, in a ring where everything is owned by the peer
 	// between should return true for everything
 	for i := 1; i <= 255; i++ {
-		ip := utils.Ip4int(net.ParseIP(fmt.Sprintf("10.0.0.%d", i)))
+		ip := utils.IP4int(net.ParseIP(fmt.Sprintf("10.0.0.%d", i)))
 		wt.AssertTrue(t, ring1.between(ip, 0, 1), "between should be true!")
 	}
 
@@ -83,7 +83,7 @@ func TestBetween(t *testing.T) {
 	ring1.assertInvariants()
 	for i := 10; i <= 244; i++ {
 		ipStr := fmt.Sprintf("10.0.0.%d", i)
-		ip := utils.Ip4int(net.ParseIP(ipStr))
+		ip := utils.IP4int(net.ParseIP(ipStr))
 		wt.AssertTrue(t, ring1.between(ip, 0, 1),
 			fmt.Sprintf("Between should be true for %s!", ipStr))
 		wt.AssertFalse(t, ring1.between(ip, 1, 2),
@@ -91,7 +91,7 @@ func TestBetween(t *testing.T) {
 	}
 	for i := 0; i <= 9; i++ {
 		ipStr := fmt.Sprintf("10.0.0.%d", i)
-		ip := utils.Ip4int(net.ParseIP(ipStr))
+		ip := utils.IP4int(net.ParseIP(ipStr))
 		wt.AssertFalse(t, ring1.between(ip, 0, 1),
 			fmt.Sprintf("Between should be false for %s!", ipStr))
 		wt.AssertTrue(t, ring1.between(ip, 1, 2),
@@ -99,7 +99,7 @@ func TestBetween(t *testing.T) {
 	}
 	for i := 245; i <= 255; i++ {
 		ipStr := fmt.Sprintf("10.0.0.%d", i)
-		ip := utils.Ip4int(net.ParseIP(ipStr))
+		ip := utils.IP4int(net.ParseIP(ipStr))
 		wt.AssertFalse(t, ring1.between(ip, 0, 1),
 			fmt.Sprintf("Between should be false for %s!", ipStr))
 		wt.AssertTrue(t, ring1.between(ip, 1, 2),

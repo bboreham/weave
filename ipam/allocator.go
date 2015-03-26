@@ -31,6 +31,8 @@ func (d *ipamGossipData) Encode() []byte {
 	return d.alloc.Encode()
 }
 
+// Gossip returns a GossipData implementation, which in this case alway
+// returns the latest ring state (and does nothing on merge)
 func (alloc *Allocator) Gossip() router.GossipData {
 	return &ipamGossipData{alloc}
 }
@@ -40,6 +42,7 @@ type pendingAllocation struct {
 	Ident      string
 }
 
+// Allocator brings together Ring and space.Set, and does the nessecary plumbing.
 type Allocator struct {
 	actionChan    chan<- func()
 	ourName       router.PeerName
@@ -53,6 +56,7 @@ type Allocator struct {
 	gossip        router.Gossip
 }
 
+// NewAllocator creats and initialises a new Allocator
 func NewAllocator(ourName router.PeerName, universeCIDR string) (*Allocator, error) {
 	_, universeNet, err := net.ParseCIDR(universeCIDR)
 	if err != nil {
@@ -78,6 +82,7 @@ func NewAllocator(ourName router.PeerName, universeCIDR string) (*Allocator, err
 	return alloc, nil
 }
 
+// SetGossip gives the allocator an interface for talking to the outside world
 func (alloc *Allocator) SetGossip(gossip router.Gossip) {
 	alloc.gossip = gossip
 }
@@ -116,12 +121,12 @@ func (alloc *Allocator) electLeaderIfNecessary() {
 		return
 	}
 	leader := alloc.gossip.(router.Leadership).LeaderElect()
-	alloc.Debugln("Elected leader:", leader)
+	alloc.debugln("Elected leader:", leader)
 	if leader == alloc.ourName {
 		// I'm the winner; take control of the whole universe
 		alloc.ring.ClaimItAll()
 		alloc.considerNewSpaces()
-		alloc.Infof("I was elected leader of the universe\n%s", alloc.string())
+		alloc.infof("I was elected leader of the universe\n%s", alloc.string())
 		alloc.gossip.GossipBroadcast(alloc.ring.GossipState())
 		alloc.checkPending()
 	} else {
@@ -132,17 +137,18 @@ func (alloc *Allocator) electLeaderIfNecessary() {
 // return true if the request is completed, false if pending
 func (alloc *Allocator) tryAllocateFor(ident string, resultChan chan<- net.IP) bool {
 	if addr := alloc.spaceSet.Allocate(); addr != nil {
-		alloc.Debugln("Allocated", addr, "for", ident)
+		alloc.debugln("Allocated", addr, "for", ident)
 		alloc.addOwned(ident, addr)
 		resultChan <- addr
 		return true
-	} else { // out of space
-		if donor, err := alloc.ring.ChoosePeerToAskForSpace(); err == nil {
-			alloc.Debugln("Decided to ask peer", donor, "for space")
-			alloc.sendRequest(donor, msgSpaceRequest)
-			return false
-		}
 	}
+
+	// out of space
+	if donor, err := alloc.ring.ChoosePeerToAskForSpace(); err == nil {
+		alloc.debugln("Decided to ask peer", donor, "for space")
+		alloc.sendRequest(donor, msgSpaceRequest)
+	}
+
 	return false
 }
 
@@ -189,17 +195,17 @@ func (alloc *Allocator) donateSpace(to router.PeerName) {
 	// more.
 	defer alloc.sendRequest(to, msgGossip)
 
-	alloc.Debugln("Peer", to, "asked me for space")
+	alloc.debugln("Peer", to, "asked me for space")
 	start, size, ok := alloc.spaceSet.GiveUpSpace()
 	if !ok {
 		free := alloc.spaceSet.NumFreeAddresses()
 		utils.Assert(free == 0,
 			fmt.Sprintf("Couldn't give up space but I have %d free addresses", free))
-		alloc.Debugln("No space to give to peer", to)
+		alloc.debugln("No space to give to peer", to)
 		return
 	}
-	end := utils.Intip4(utils.Ip4int(start) + size)
-	alloc.Debugln("Giving range", start, end, size, "to", to)
+	end := utils.IntIP4(utils.IP4int(start) + size)
+	alloc.debugln("Giving range", start, end, size, "to", to)
 	alloc.ring.GrantRangeToHost(start, end, to)
 }
 
@@ -212,7 +218,7 @@ func (alloc *Allocator) considerNewSpaces() {
 	for _, r := range ownedRanges {
 		size := uint32(utils.Subtract(r.End, r.Start))
 		if !alloc.spaceSet.Exists(r.Start, size) {
-			alloc.Debugln("Found new space at", r.Start)
+			alloc.debugln("Found new space at", r.Start)
 			alloc.spaceSet.AddSpace(space.Space{Start: r.Start, Size: size})
 		}
 	}
@@ -244,12 +250,12 @@ func (alloc *Allocator) reportFreeSpace() {
 	}
 }
 
-func (alloc *Allocator) Errorln(args ...interface{}) {
+func (alloc *Allocator) errorln(args ...interface{}) {
 	lg.Error.Println(append([]interface{}{fmt.Sprintf("[allocator %s]:", alloc.ourName)}, args...)...)
 }
-func (alloc *Allocator) Infof(fmt string, args ...interface{}) {
+func (alloc *Allocator) infof(fmt string, args ...interface{}) {
 	lg.Info.Printf("[allocator %s] "+fmt, append([]interface{}{alloc.ourName}, args...)...)
 }
-func (alloc *Allocator) Debugln(args ...interface{}) {
+func (alloc *Allocator) debugln(args ...interface{}) {
 	lg.Debug.Println(append([]interface{}{fmt.Sprintf("[allocator %s]:", alloc.ourName)}, args...)...)
 }

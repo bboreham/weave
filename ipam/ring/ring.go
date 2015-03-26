@@ -135,7 +135,7 @@ func (r *Ring) insertAt(i int, e entry) {
 
 // New creates an empty ring belonging to peer.
 func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
-	start, end := utils.Ip4int(startIP), utils.Ip4int(endIP)
+	start, end := utils.IP4int(startIP), utils.IP4int(endIP)
 	utils.Assert(start <= end, "Start needs to be less than end!")
 
 	return &Ring{start, end, peer, make([]*entry, 0)}
@@ -191,7 +191,7 @@ func (r *Ring) distance(start, end uint32) uint32 {
 func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	r.assertInvariants()
 
-	start, end := utils.Ip4int(startIP), utils.Ip4int(endIP)
+	start, end := utils.IP4int(startIP), utils.IP4int(endIP)
 	utils.Assert(r.Start <= start && start < r.End, "Trying to grant range outside of subnet")
 	utils.Assert(r.Start < end && end <= r.End, "Trying to grant range outside of subnet")
 	utils.Assert(len(r.Entries) > 0, "Cannot grant if ring is empty!")
@@ -396,23 +396,23 @@ func (r *Ring) OwnedRanges() []Range {
 		case nextEntry.Token == r.Start:
 			// be careful here; if end token == start (ie last)
 			// entry on ring, we want to actually use r.End
-			result[j] = Range{Start: utils.Intip4(entry.Token),
-				End: utils.Intip4(r.End)}
+			result[j] = Range{Start: utils.IntIP4(entry.Token),
+				End: utils.IntIP4(r.End)}
 			j++
 
 		case nextEntry.Token <= entry.Token:
 			// We wrapped; want to split around 0
 			// First shuffle everything up as we want results to be sorted
 			copy(result[1:j+1], result[:j])
-			result[0] = Range{Start: utils.Intip4(r.Start),
-				End: utils.Intip4(nextEntry.Token)}
-			result[j+1] = Range{Start: utils.Intip4(entry.Token),
-				End: utils.Intip4(r.End)}
+			result[0] = Range{Start: utils.IntIP4(r.Start),
+				End: utils.IntIP4(nextEntry.Token)}
+			result[j+1] = Range{Start: utils.IntIP4(entry.Token),
+				End: utils.IntIP4(r.End)}
 			j = j + 2
 
 		default:
-			result[j] = Range{Start: utils.Intip4(entry.Token),
-				End: utils.Intip4(nextEntry.Token)}
+			result[j] = Range{Start: utils.IntIP4(entry.Token),
+				End: utils.IntIP4(nextEntry.Token)}
 			j++
 		}
 	}
@@ -437,7 +437,7 @@ func (r *Ring) ClaimItAll() {
 func (r *Ring) String() string {
 	var buffer bytes.Buffer
 	for _, entry := range r.Entries {
-		fmt.Fprintf(&buffer, "%s -> %s (%d, %d, %d)\n", utils.Intip4(entry.Token),
+		fmt.Fprintf(&buffer, "%s -> %s (%d, %d, %d)\n", utils.IntIP4(entry.Token),
 			entry.Peer, entry.Tombstone, entry.Version, entry.Free)
 	}
 	return buffer.String()
@@ -447,7 +447,7 @@ func (r *Ring) String() string {
 // how many free ips are in a given ring, so that ChoosePeerToAskForSpace
 // can make more intelligent decisions.
 func (r *Ring) ReportFree(startIP net.IP, free uint32) {
-	start := utils.Ip4int(startIP)
+	start := utils.IP4int(startIP)
 
 	// Look for entry
 	i := sort.Search(len(r.Entries), func(j int) bool {

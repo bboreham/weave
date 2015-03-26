@@ -6,6 +6,7 @@ import (
 	"net"
 )
 
+// Start runs the allocator goroutine
 func (alloc *Allocator) Start() {
 	actionChan := make(chan func(), router.ChannelSize)
 	alloc.actionChan = actionChan
@@ -14,7 +15,7 @@ func (alloc *Allocator) Start() {
 
 // Actor client API
 
-// Sync.
+// GetFor (Sync) - get IP address for container with given name
 func (alloc *Allocator) GetFor(ident string, cancelChan <-chan bool) net.IP {
 	resultChan := make(chan net.IP)
 	alloc.actionChan <- func() {
@@ -36,7 +37,7 @@ func (alloc *Allocator) GetFor(ident string, cancelChan <-chan bool) net.IP {
 	}
 }
 
-// Sync.
+// Free (Sync) - release IP address for container with given name
 func (alloc *Allocator) Free(ident string, addr net.IP) error {
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
@@ -58,7 +59,7 @@ func (alloc *Allocator) String() string {
 	return <-resultChan
 }
 
-// Async.
+// DeleteRecordsFor is provided to satisfy the updater interface; does a free underneath.  Async.
 func (alloc *Allocator) DeleteRecordsFor(ident string) error {
 	alloc.actionChan <- func() {
 		for _, ip := range alloc.owned[ident] {
@@ -69,9 +70,9 @@ func (alloc *Allocator) DeleteRecordsFor(ident string) error {
 	return nil // this is to satisfy the ContainerObserver interface
 }
 
-// Sync.
+// OnGossipUnicast (Sync)
 func (alloc *Allocator) OnGossipUnicast(sender router.PeerName, msg []byte) error {
-	alloc.Debugln("OnGossipUnicast from", sender, ": ", len(msg), "bytes")
+	alloc.debugln("OnGossipUnicast from", sender, ": ", len(msg), "bytes")
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
 		switch msg[0] {
@@ -88,9 +89,9 @@ func (alloc *Allocator) OnGossipUnicast(sender router.PeerName, msg []byte) erro
 	return <-resultChan
 }
 
-// Sync.
+// OnGossipBroadcast (Sync)
 func (alloc *Allocator) OnGossipBroadcast(msg []byte) error {
-	alloc.Debugln("OnGossipBroadcast:", len(msg), "bytes")
+	alloc.debugln("OnGossipBroadcast:", len(msg), "bytes")
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
 		resultChan <- alloc.updateRing(msg)
@@ -98,7 +99,7 @@ func (alloc *Allocator) OnGossipBroadcast(msg []byte) error {
 	return <-resultChan
 }
 
-// Sync.
+// Encode (Sync)
 func (alloc *Allocator) Encode() []byte {
 	resultChan := make(chan []byte)
 	alloc.actionChan <- func() {
@@ -107,9 +108,9 @@ func (alloc *Allocator) Encode() []byte {
 	return <-resultChan
 }
 
-// Sync.
+// OnGossip (Sync)
 func (alloc *Allocator) OnGossip(msg []byte) (router.GossipData, error) {
-	alloc.Debugln("Allocator.OnGossip:", len(msg), "bytes")
+	alloc.debugln("Allocator.OnGossip:", len(msg), "bytes")
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
 		resultChan <- alloc.updateRing(msg)
