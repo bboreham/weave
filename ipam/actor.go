@@ -82,9 +82,7 @@ func (alloc *Allocator) OnGossipUnicast(sender router.PeerName, msg []byte) erro
 			alloc.donateSpace(sender)
 			resultChan <- nil
 		case msgGossip:
-			resultChan <- alloc.ring.OnGossipBroadcast(msg[1:])
-			alloc.considerNewSpaces()
-			alloc.considerOurPosition()
+			resultChan <- alloc.updateRing(msg[1:])
 		}
 	}
 	return <-resultChan
@@ -95,9 +93,7 @@ func (alloc *Allocator) OnGossipBroadcast(msg []byte) error {
 	alloc.Debugln("OnGossipBroadcast:", len(msg), "bytes")
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
-		resultChan <- alloc.ring.OnGossipBroadcast(msg)
-		alloc.considerNewSpaces()
-		alloc.considerOurPosition()
+		resultChan <- alloc.updateRing(msg)
 	}
 	return <-resultChan
 }
@@ -116,9 +112,7 @@ func (alloc *Allocator) OnGossip(msg []byte) (router.GossipData, error) {
 	alloc.Debugln("Allocator.OnGossip:", len(msg), "bytes")
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
-		err := alloc.ring.OnGossipBroadcast(msg)
-		resultChan <- err
-		alloc.considerOurPosition()
+		resultChan <- alloc.updateRing(msg)
 	}
 	err := <-resultChan
 	return nil, err // for now, we never propagate updates. TBD

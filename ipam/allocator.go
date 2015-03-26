@@ -175,6 +175,13 @@ func (alloc *Allocator) sendRequest(dest router.PeerName, kind byte) {
 	//alloc.inflight = append(alloc.inflight, req)
 }
 
+func (alloc *Allocator) updateRing(msg []byte) error {
+	err := alloc.ring.UpdateRing(msg)
+	alloc.considerNewSpaces()
+	alloc.considerOurPosition()
+	return err
+}
+
 func (alloc *Allocator) donateSpace(to router.PeerName) {
 	// No matter what we do, we'll send a unicast gossip
 	// of our ring back to tha chap who asked for space.

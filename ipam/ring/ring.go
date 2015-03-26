@@ -1,5 +1,5 @@
 /*
-Ring implements a simple ring CRDT.
+Package ring implements a simple ring CRDT.
 
 TODO: merge consequtively owned ranges
 TODO: implement tombstones
@@ -18,7 +18,7 @@ import (
 	"sort"
 )
 
-// Represents entries around the ring
+// Entry represents entries around the ring
 type entry struct {
 	Token     uint32          // The start of this range
 	Peer      router.PeerName // Who owns this range
@@ -52,7 +52,7 @@ func (es entries) String() string {
 	return buffer.String()
 }
 
-// Represents the ring itself
+// Ring represents the ring itself
 type Ring struct {
 	Start, End uint32          // [min, max) tokens in this ring.  Due to wrapping, min == max (effectively)
 	Peername   router.PeerName // name of peer owning this ring instance
@@ -179,12 +179,13 @@ func (r *Ring) between(token uint32, i, j int) bool {
 func (r *Ring) distance(start, end uint32) uint32 {
 	if end > start {
 		return end - start
-	} else {
-		return (r.End - start) + (end - r.Start)
 	}
+
+	return (r.End - start) + (end - r.Start)
 }
 
-// Grant range [start, end) to peer
+// GrantRangeToHost modifies the ring such that range [start, end)
+// is assigned to peer.  This may insert upto two new tokens.
 // Note, due to wrapping, end can be less than start
 // TODO grant should calulate free correctly
 func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
@@ -250,12 +251,13 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	if nextEntry.Token == end {
 		// That was easy
 		return
-	} else {
-		utils.Assert(r.between(end, i, k), "End spans another token")
-		distance := r.distance(end, r.entry(k).Token)
-		r.insertAt(k, entry{Token: end, Peer: r.Peername, Free: distance})
-		r.assertInvariants()
 	}
+
+	// Case ii (case iii should never happen)
+	utils.Assert(r.between(end, i, k), "End spans another token")
+	distance := r.distance(end, r.entry(k).Token)
+	r.insertAt(k, entry{Token: end, Peer: r.Peername, Free: distance})
+	r.assertInvariants()
 }
 
 // Merge the given ring into this ring.
@@ -372,9 +374,9 @@ func (r *Ring) merge(gossip Ring) error {
 		entry, remote, err := mergeEntry(*r.Entries[i], *gossip.Entries[j])
 		if err != nil {
 			return err
-		} else {
-			result[k] = entry
 		}
+
+		result[k] = entry
 		i++
 		j++
 
@@ -425,7 +427,8 @@ func (r *Ring) merge(gossip Ring) error {
 	return nil
 }
 
-func (r *Ring) OnGossipBroadcast(msg []byte) error {
+// UpdateRing updates the ring with the state in msg
+func (r *Ring) UpdateRing(msg []byte) error {
 	reader := bytes.NewReader(msg)
 	decoder := gob.NewDecoder(reader)
 	gossipedRing := Ring{}

@@ -301,7 +301,7 @@ func TestGossip(t *testing.T) {
 	assertRing(ring2, []*entry{})
 
 	// Check the merge sends it to the other ring
-	wt.AssertSuccess(t, ring2.OnGossipBroadcast(ring1.GossipState()))
+	wt.AssertSuccess(t, ring2.UpdateRing(ring1.GossipState()))
 	assertRing(ring1, []*entry{{Token: startPlus, Peer: peer1name, Free: 253},
 		{Token: endMinus, Peer: router.UnknownPeerName}})
 	assertRing(ring2, []*entry{{Token: startPlus, Peer: peer1name, Free: 253},
