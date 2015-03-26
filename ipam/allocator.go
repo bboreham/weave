@@ -179,8 +179,9 @@ func (alloc *Allocator) donateSpace(to router.PeerName) {
 	alloc.Debugln("Peer", to, "asked me for space")
 	start, size, ok := alloc.spaceSet.GiveUpSpace()
 	if !ok {
-		utils.Assert(alloc.spaceSet.NumFreeAddresses() == 0,
-			"Couldn't give up space but I have free addresses")
+		free := alloc.spaceSet.NumFreeAddresses()
+		utils.Assert(free == 0,
+			fmt.Sprintf("Couldn't give up space but I have %d free addresses", free))
 		alloc.Debugln("No space to give to peer", to)
 		return
 	}

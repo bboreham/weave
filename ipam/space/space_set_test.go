@@ -1,10 +1,12 @@
 package space
 
 import (
-	"github.com/zettio/weave/router"
-	wt "github.com/zettio/weave/testing"
 	"net"
 	"testing"
+
+	"github.com/zettio/weave/common"
+	"github.com/zettio/weave/ipam/utils"
+	wt "github.com/zettio/weave/testing"
 )
 
 func equal(ms1 *Space, ms2 *Space) bool {
@@ -25,7 +27,7 @@ func (ps1 *SpaceSet) Equal(ps2 *SpaceSet) bool {
 	return false
 }
 
-func spaceSetWith(pn router.PeerName, uid uint64, spaces ...*Space) *SpaceSet {
+func spaceSetWith(spaces ...*Space) *SpaceSet {
 	ps := NewSpaceSet()
 	for _, space := range spaces {
 		ps.AddSpace(space)
@@ -33,10 +35,8 @@ func spaceSetWith(pn router.PeerName, uid uint64, spaces ...*Space) *SpaceSet {
 	return ps
 }
 
-func TestGiveUp(t *testing.T) {
+func TestGiveUpSimple(t *testing.T) {
 	const (
-		peer1     = "7a:9f:eb:b6:0c:6e"
-		peer1UID  = 123456
 		testAddr1 = "10.0.1.0"
 		testAddr2 = "10.0.1.32"
 	)
@@ -45,12 +45,16 @@ func TestGiveUp(t *testing.T) {
 		ipAddr1 = net.ParseIP(testAddr1)
 	)
 
-	pn1, _ := router.PeerNameFromString(peer1)
-	ps1 := spaceSetWith(pn1, peer1UID, NewSpace(ipAddr1, 48))
-	_, numGivenUp, ok := ps1.GiveUpSpace()
+	ps1 := spaceSetWith(NewSpace(ipAddr1, 48))
+
+	// Empty space set should split in two and give me the second half
+	start, numGivenUp, ok := ps1.GiveUpSpace()
 	wt.AssertBool(t, ok, true, "GiveUpSpace result")
-	wt.AssertEqualUint32(t, numGivenUp, 25, "GiveUpSpace 1 size")
-	wt.AssertEqualUint32(t, ps1.NumFreeAddresses(), 23, "num free addresses")
+	wt.AssertTrue(t, start.Equal(net.ParseIP("10.0.1.24")), "Invalid start")
+	wt.AssertEqualUint32(t, numGivenUp, 24, "GiveUpSpace 1 size")
+	wt.AssertEqualUint32(t, ps1.NumFreeAddresses(), 24, "num free addresses")
+
+	// Now check we can give the rest up.
 	count := 0 // count to avoid infinite loop
 	for ; count < 1000; count++ {
 		_, size, ok := ps1.GiveUpSpace()
@@ -61,4 +65,36 @@ func TestGiveUp(t *testing.T) {
 	}
 	wt.AssertEqualUint32(t, ps1.NumFreeAddresses(), 0, "num free addresses")
 	wt.AssertEqualUint32(t, numGivenUp, 48, "total space given up")
+}
+
+func TestGiveUpHard(t *testing.T) {
+	common.InitDefaultLogging(true)
+	var (
+		start        = net.ParseIP("10.0.1.0")
+		size  uint32 = 48
+	)
+
+	// Fill a fresh space set
+	spaceset := spaceSetWith(NewSpace(start, size))
+	for i := uint32(0); i < size; i++ {
+		ip := spaceset.Allocate()
+		wt.AssertTrue(t, ip != nil, "Failed to get IP!")
+	}
+
+	// Now free all but the last address
+	// this will force us to split the free list
+	for i := uint32(0); i < size-1; i++ {
+		wt.AssertSuccess(t, spaceset.Free(utils.Add(start, i)))
+	}
+
+	// Now split
+	newRange, numGivenUp, ok := spaceset.GiveUpSpace()
+	wt.AssertBool(t, ok, true, "GiveUpSpace result")
+	wt.AssertTrue(t, newRange.Equal(net.ParseIP("10.0.1.23")), "Invalid start")
+	wt.AssertEqualUint32(t, numGivenUp, 24, "GiveUpSpace 1 size")
+	wt.AssertEqualUint32(t, spaceset.NumFreeAddresses(), 23, "num free addresses")
+
+	//Space set should now have 2 spaces
+	expected := spaceSetWith(NewSpace(start, 23), NewSpace(net.ParseIP("10.0.1.47"), 1))
+	wt.AssertTrue(t, spaceset.Equal(expected), "Wrong sets")
 }

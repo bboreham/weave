@@ -101,6 +101,29 @@ func (space *Space) drainFreeList() {
 	}
 }
 
+// assertFree asserts that the size consequtive IPs from start
+// (inclusive) are not allocated
+func (s *Space) assertFree(start net.IP, size uint32) {
+	utils.Assert(s.Contains(start), "Range outside my care")
+	utils.Assert(s.Contains(utils.Add(start, size - 1)), "Range outside my care")
+
+	// Is this range wholly outside the free list?
+	// if start == s.Start; offset = 0; MaxAllocated
+	// if both next free and count of allocated.
+	offset := uint32(utils.Subtract(s.Start, start))
+	if offset >= s.MaxAllocated {
+		return
+	}
+
+	for i := offset; i < offset + size; i++ {
+		if i >= s.MaxAllocated {
+			return
+		}
+
+		utils.Assert(s.freelist.find(utils.Add(start, i)) != -1, "Address in use!")
+	}
+}
+
 // BiggestFreeChunk scans the freelist and returns the
 // start, length of the largest free range of address it
 // can find.
@@ -126,7 +149,7 @@ func (s *Space) BiggestFreeChunk() (net.IP, uint32) {
 		curr := s.freelist[i]
 		i++
 		for ; i < len(s.freelist); i++ {
-			if utils.Subtract(curr, s.freelist[i]) > 1 {
+			if utils.Subtract(s.freelist[i], curr) > 1 {
 				break
 			}
 
@@ -144,6 +167,7 @@ func (s *Space) BiggestFreeChunk() (net.IP, uint32) {
 
 	// Now return what we found
 	if chunkSize > 0 {
+		s.assertFree(chunkStart, chunkSize)
 		return chunkStart, chunkSize
 	} else {
 		return nil, 0
@@ -155,15 +179,13 @@ func (s *Space) NumFreeAddresses() uint32 {
 }
 
 func (space *Space) String() string {
-	return fmt.Sprintf("%s+%d, %d/%d", space.Start, space.Size, space.MaxAllocated, len(space.freelist))
+	return fmt.Sprintf("%s+%d (%d/%d)", space.Start, space.Size, space.MaxAllocated, len(space.freelist))
 }
 
 // Divide a space into two new spaces at a given address, copying allocations and frees.
 func (space *Space) Split(addr net.IP) (*Space, *Space) {
+	utils.Assert(space.Contains(addr), "Splitting around a point not in the space!")
 	breakpoint := utils.Subtract(addr, space.Start)
-	if breakpoint < 0 || breakpoint >= int64(space.Size) {
-		return nil, nil // Not contained within this space
-	}
 	ret1 := NewSpace(space.Start, uint32(breakpoint))
 	ret2 := NewSpace(addr, space.Size-uint32(breakpoint))
 
@@ -189,6 +211,9 @@ func (space *Space) Split(addr net.IP) (*Space, *Space) {
 			}
 		}
 	}
+
+	ret1.drainFreeList()
+	ret2.drainFreeList()
 
 	return ret1, ret2
 }

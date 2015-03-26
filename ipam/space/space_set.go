@@ -93,71 +93,84 @@ func (s *SpaceSet) NumFreeAddresses() uint32 {
 
 // Give up some space because one of our peers has asked for it.
 // Pick some large reasonably-sized chunk.
-func (s *SpaceSet) GiveUpSpace() (start net.IP, size uint32, ok bool) {
+func (s *SpaceSet) GiveUpSpace() (net.IP, uint32, bool) {
 	s.assertInvariants()
 	defer s.assertInvariants()
 
+	// Premature optimisation?
 	totalFreeAddresses := s.NumFreeAddresses()
 	if totalFreeAddresses == 0 {
 		return nil, 0, false
 	}
-	var bestFree uint32 = 0
-	var bestIP net.IP = nil
-	for _, space := range s.spaces {
+
+	// First find the biggest free chunk amongst all our spaces
+	var bestStart net.IP = nil
+	var bestSize uint32 = 0
+	var bestSpace *Space
+	var spaceIndex int
+	for j, space := range s.spaces {
 		chunkStart, chunkSize := space.BiggestFreeChunk()
-		if chunkStart != nil && chunkSize > bestFree {
-			bestFree = chunkSize
-			bestIP = chunkStart
-			if chunkSize >= MaxAddressesToGiveUp {
-				break
-			}
+		if chunkStart == nil || chunkSize < bestSize {
+			continue
 		}
-	}
-	if bestIP != nil {
-		var spaceToGiveUp uint32 = MaxAddressesToGiveUp
-		if spaceToGiveUp > bestFree {
-			spaceToGiveUp = bestFree
-		}
-		// Don't give away more than half of our available addresses
-		if spaceToGiveUp > totalFreeAddresses/2+1 {
-			spaceToGiveUp = totalFreeAddresses/2 + 1
-		}
-		return bestIP, spaceToGiveUp, s.GiveUpSpecificSpace(bestIP, spaceToGiveUp)
-	}
-	return nil, 0, false
-}
 
-// If we can, give up the space requested and return true.
-func (s *SpaceSet) GiveUpSpecificSpace(start net.IP, size uint32) bool {
-	s.assertInvariants()
-	defer s.assertInvariants()
-
-	for i, space := range s.spaces {
-		if space.Contains(start) {
-			split1, split2 := space.Split(start)
-			var split3 *Space = nil
-			if split2.Size != size {
-				endAddress := utils.Add(start, size)
-				split2, split3 = split2.Split(endAddress)
-			}
-			lg.Debug.Println("GiveUpSpecificSpace", start, size, "from", space, "splits", split1, split2, split3)
-			if split2.NumFreeAddresses() == size {
-				// Take out the old space, then add up to two new spaces.  Ordering of s.spaces is not important.
-				s.spaces = append(s.spaces[:i], s.spaces[i+1:]...)
-				if split1.Size > 0 {
-					s.AddSpace(split1)
-				}
-				if split3 != nil {
-					s.AddSpace(split3)
-				}
-				return true
-			} else {
-				lg.Debug.Println("Unable to give up space", split2)
-				return false // space not free
-			}
-		}
+		bestStart = chunkStart
+		bestSize = chunkSize
+		bestSpace = space
+		spaceIndex = j
 	}
-	return false
+
+	if bestStart == nil {
+		utils.Assert(s.NumFreeAddresses() == 0, "Failed to find a range but have free addresses")
+		return nil, 0, false
+	}
+
+	// Now right-size this space.
+	// Never give away more than half a space
+	// But don't try ang give away nothing
+	utils.Assert(bestSize <= bestSpace.Size, "Space gave me free bigger than themselves!")
+	var maxDonation = bestSpace.Size/2
+	if maxDonation < 4 {
+		maxDonation = 4
+	}
+
+	if bestSize > maxDonation {
+		// Try and align the start to the right most
+		shift := bestSize - maxDonation
+		bestStart = utils.Add(bestStart, shift)
+		bestSize = maxDonation
+	}
+
+	utils.Assert(bestSize > 0, "Trying to give away nothing!")
+
+	lg.Debug.Println("GiveUpSpace start =", bestStart, "size =", bestSize, "from", bestSpace)
+
+	// Now split and remove the final space
+	utils.Assert(bestSpace.Contains(bestStart), "WTF?")
+
+	split1, split2 := bestSpace.Split(bestStart)
+	lg.Debug.Println("GiveUpSpace splits", split1, split2)
+	var split3 *Space = nil
+	if split2.Size != bestSize {
+		endAddress := utils.Add(bestStart, bestSize)
+		split2, split3 = split2.Split(endAddress)
+		lg.Debug.Println("GiveUpSpace splits", split1, split2, split3)
+	}
+
+	utils.Assert(split2.NumFreeAddresses() == bestSize, "Trying to free a space with stuff in it!")
+
+	// Take out the old space, then add up to two new spaces.
+	// Ordering of s.spaces is important.
+	s.spaces = append(s.spaces[:spaceIndex], s.spaces[spaceIndex+1:]...)
+
+	if split1.Size > 0 {
+		s.AddSpace(split1)
+	}
+	if split3 != nil {
+		s.AddSpace(split3)
+	}
+
+	return bestStart, bestSize, true
 }
 
 func (s *SpaceSet) Allocate() net.IP {

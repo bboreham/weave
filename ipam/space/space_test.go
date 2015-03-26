@@ -47,6 +47,11 @@ func TestSpaceFree(t *testing.T) {
 	)
 
 	space := NewSpace(net.ParseIP(testAddr1), 20)
+
+	// Check we are prepared to give up the entire space
+	start, size := space.BiggestFreeChunk()
+	wt.AssertTrue(t, start.Equal(net.ParseIP(testAddr1)) && size == 20, "Wrong space")
+
 	for i := 0; i < 20; i++ {
 		addr := space.Allocate()
 		wt.AssertTrue(t, addr != nil, "Failed to get address")
@@ -55,7 +60,7 @@ func TestSpaceFree(t *testing.T) {
 	// Check we are full
 	addr := space.Allocate()
 	wt.AssertTrue(t, addr == nil, "Should have failed to get address")
-	start, size := space.BiggestFreeChunk()
+	start, size = space.BiggestFreeChunk()
 	wt.AssertTrue(t, start == nil && size == 0, "Wrong space")
 
 	// Free in the middle
