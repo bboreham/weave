@@ -41,7 +41,7 @@ type pendingAllocation struct {
 }
 
 type Allocator struct {
-	actionChan    chan<- interface{}
+	actionChan    chan<- func()
 	ourName       router.PeerName
 	universeStart net.IP
 	universeSize  uint32

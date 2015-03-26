@@ -167,9 +167,14 @@ func testAllocator(t *testing.T, name string, universeCIDR string) *Allocator {
 }
 
 func (alloc *Allocator) startForTesting() {
-	actionChan := make(chan interface{}, router.ChannelSize)
+	actionChan := make(chan func(), router.ChannelSize)
 	alloc.actionChan = actionChan
 	go alloc.actorLoop(actionChan, false)
+}
+
+// Async.
+func (alloc *Allocator) Stop() {
+	alloc.actionChan <- nil
 }
 
 // Check whether or not something was sent on a channel

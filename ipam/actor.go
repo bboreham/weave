@@ -7,19 +7,12 @@ import (
 )
 
 func (alloc *Allocator) Start() {
-	actionChan := make(chan interface{}, router.ChannelSize)
+	actionChan := make(chan func(), router.ChannelSize)
 	alloc.actionChan = actionChan
 	go alloc.actorLoop(actionChan, true)
 }
 
 // Actor client API
-
-type stop struct{}
-
-// Async.
-func (alloc *Allocator) Stop() {
-	alloc.actionChan <- stop{}
-}
 
 // Sync.
 func (alloc *Allocator) GetFor(ident string, cancelChan <-chan bool) net.IP {
@@ -133,20 +126,15 @@ func (alloc *Allocator) OnGossip(msg []byte) (router.GossipData, error) {
 
 // ACTOR server
 
-func (alloc *Allocator) actorLoop(actionChan <-chan interface{}, withTimers bool) {
+func (alloc *Allocator) actorLoop(actionChan <-chan func(), withTimers bool) {
 	// FIXME: not doing any timers at the moment.
 	for {
 		select {
-		case query, ok := <-actionChan:
-			if !ok {
+		case action, ok := <-actionChan:
+			if !ok || action == nil {
 				return
 			}
-			switch q := query.(type) {
-			case func():
-				q()
-			case stop:
-				return
-			}
+			action()
 		}
 		alloc.assertInvariants()
 		alloc.reportFreeSpace()
