@@ -575,9 +575,9 @@ func (r *Ring) ReportFree(startIP net.IP, free uint32) {
 }
 
 func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
-	// Construct total free space and number of ranges per peer
-	totalSpacePerPeer := make(map[router.PeerName]int)
-	numRangesPerPeer := make(map[router.PeerName]int)
+	// Compute total free space per peer
+	var sum uint32 = 0
+	totalSpacePerPeer := make(map[router.PeerName]uint32)
 	for _, entry := range r.Entries {
 		// Ignore ranges with no free space
 		if entry.Free <= 0 {
@@ -589,44 +589,21 @@ func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
 			continue
 		}
 
-		if sum, ok := totalSpacePerPeer[entry.Peer]; ok {
-			totalSpacePerPeer[entry.Peer] = sum + int(entry.Free)
-			numRangesPerPeer[entry.Peer] = numRangesPerPeer[entry.Peer] + 1
-		} else {
-			totalSpacePerPeer[entry.Peer] = int(entry.Free)
-			numRangesPerPeer[entry.Peer] = 1
-		}
+		totalSpacePerPeer[entry.Peer] += entry.Free
+		sum += entry.Free
 	}
 
-	utils.Assert(len(totalSpacePerPeer) == len(numRangesPerPeer), "WFT")
-
-	if len(totalSpacePerPeer) <= 0 {
+	if sum == 0 {
 		err = ErrNoFreeSpace
 		return
 	}
 
-	// Construct average free space per range per peer
-	type choice struct {
-		peer   router.PeerName
-		weight int
-	}
-	sum := 0
-	choices := make([]choice, len(totalSpacePerPeer))
-	i := 0
-	for peer, free := range totalSpacePerPeer {
-		average := (free / numRangesPerPeer[peer])
-		choices[i] = choice{peer, average}
-		sum += average
-		i++
-	}
-
-	// Pick random peer, weighted by average free space
-	rn := rand.Intn(sum)
-	for _, c := range choices {
-		rn -= c.weight
+	// Pick random peer, weighted by total free space
+	rn := rand.Int63n(int64(sum))
+	for peername, space := range totalSpacePerPeer {
+		rn -= int64(space)
 		if rn < 0 {
-			result = c.peer
-			return
+			return peername, nil
 		}
 	}
 
