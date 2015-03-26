@@ -14,7 +14,7 @@ import (
 
 // Utility function to set up initial conditions for test
 func (alloc *Allocator) addSpace(startAddr string, length uint32) *Allocator {
-	alloc.spaceSet.AddSpace(space.NewSpace(net.ParseIP(startAddr), length))
+	alloc.spaceSet.AddSpace(space.Space{Start: net.ParseIP(startAddr), Size: length})
 	return alloc
 }
 

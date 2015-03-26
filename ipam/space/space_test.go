@@ -14,7 +14,7 @@ func TestSpaceAllocate(t *testing.T) {
 		containerID = "deadbeef"
 	)
 
-	space1 := NewSpace(net.ParseIP(testAddr1), 20)
+	space1 := Space{Start: net.ParseIP(testAddr1), Size: 20}
 	wt.AssertEqualUint32(t, space1.NumFreeAddresses(), 20, "Free addresses")
 	space1.assertInvariants()
 
@@ -46,7 +46,7 @@ func TestSpaceFree(t *testing.T) {
 		containerID = "deadbeef"
 	)
 
-	space := NewSpace(net.ParseIP(testAddr1), 20)
+	space := Space{Start: net.ParseIP(testAddr1), Size: 20}
 
 	// Check we are prepared to give up the entire space
 	start, size := space.BiggestFreeChunk()
@@ -104,7 +104,7 @@ func TestSpaceSplit(t *testing.T) {
 		testAddr2   = "10.0.1.3"
 	)
 
-	space1 := NewSpace(net.ParseIP(testAddr1), 10)
+	space1 := Space{Start: net.ParseIP(testAddr1), Size: 10}
 	addr1 := space1.Allocate()
 	addr2 := space1.Allocate()
 	addr3 := space1.Allocate()

@@ -47,7 +47,7 @@ type Allocator struct {
 	universeSize  uint32
 	universeLen   int        // length of network prefix (e.g. 24 for a /24 network)
 	ring          *ring.Ring // it's for you!
-	spaceSet      *space.SpaceSet
+	spaceSet      space.Set
 	owned         map[string][]net.IP // who owns what address, indexed by container-ID
 	pending       []pendingAllocation
 	gossip        router.Gossip
@@ -73,7 +73,6 @@ func NewAllocator(ourName router.PeerName, universeCIDR string) (*Allocator, err
 		universeSize:  universeSize,
 		universeLen:   ones,
 		ring:          ring.New(universeNet.IP, utils.Add(universeNet.IP, universeSize), ourName),
-		spaceSet:      space.NewSpaceSet(),
 		owned:         make(map[string][]net.IP),
 	}
 	return alloc, nil
@@ -214,7 +213,7 @@ func (alloc *Allocator) considerNewSpaces() {
 		size := uint32(utils.Subtract(r.End, r.Start))
 		if !alloc.spaceSet.Exists(r.Start, size) {
 			alloc.Debugln("Found new space at", r.Start)
-			alloc.spaceSet.Add(r.Start, size)
+			alloc.spaceSet.AddSpace(space.Space{Start: r.Start, Size: size})
 		}
 	}
 }
