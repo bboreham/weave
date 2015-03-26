@@ -9,9 +9,9 @@ import (
 // For compatibility with Sorting
 type addressList []net.IP
 
-func (as addressList) Len() int           { return len(as) }
-func (as addressList) Less(i, j int) bool { return utils.Ip4int(as[i]) < utils.Ip4int(as[j]) }
-func (as addressList) Swap(i, j int)      { panic("Should never be swapping entries!") }
+func (aa addressList) Len() int           { return len(aa) }
+func (aa addressList) Less(i, j int) bool { return utils.Ip4int(aa[i]) < utils.Ip4int(aa[j]) }
+func (aa addressList) Swap(i, j int)      { panic("Should never be swapping entries!") }
 
 // Maintain addresses in increasing order.
 func (aa *addressList) add(a net.IP) {
