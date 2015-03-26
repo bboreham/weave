@@ -111,9 +111,8 @@ func TestGrantSimple(t *testing.T) {
 
 	// Claim everything for peer1 - NB the special reservation
 	ring1.ClaimItAll()
-	ring2.Entries = []*entry{{Token: startPlus, Peer: peer1name, Free: 253},
-		{Token: endMinus, Peer: router.UnknownPeerName}}
-	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
+	wt.AssertEquals(t, ring1.Entries, entries{{Token: startPlus, Peer: peer1name, Free: 253},
+		{Token: endMinus, Peer: router.UnknownPeerName}})
 
 	// Now grant everything to peer2
 	ring1.GrantRangeToHost(ipStartPlus, ipEndMinus, peer2name)
@@ -130,11 +129,10 @@ func TestGrantSimple(t *testing.T) {
 
 	// And spint back to peer 2 again
 	ring1.GrantRangeToHost(ipDot245, ipEndMinus, peer2name)
-	ring2.Entries = []*entry{{Token: startPlus, Peer: peer2name, Free: 9, Version: 2},
+	wt.AssertEquals(t, ring1.Entries, entries{{Token: startPlus, Peer: peer2name, Free: 9, Version: 2},
 		{Token: dot10, Peer: peer1name, Free: 235, Version: 1},
 		{Token: dot245, Peer: peer2name, Free: 9},
-		{Token: endMinus, Peer: router.UnknownPeerName}}
-	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
+		{Token: endMinus, Peer: router.UnknownPeerName}})
 }
 
 func TestGrantSplit(t *testing.T) {
@@ -148,27 +146,24 @@ func TestGrantSplit(t *testing.T) {
 
 	// Now grant a split range to peer2
 	ring1.GrantRangeToHost(ipDot10, ipDot245, peer2name)
-	ring2.Entries = []*entry{{Token: start, Peer: peer1name, Version: 1, Free: 10},
+	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer1name, Version: 1, Free: 10},
 		{Token: dot10, Peer: peer2name, Free: 235},
-		{Token: dot245, Peer: peer1name, Free: 10}}
-	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
+		{Token: dot245, Peer: peer1name, Free: 10}})
 }
 
 func TestMergeSimple(t *testing.T) {
 	ring1 := New(ipStart, ipEnd, peer1name)
 	ring2 := New(ipStart, ipEnd, peer2name)
-	ring3 := New(ipStart, ipEnd, peer2name)
 
 	// Claim everything for peer1
 	ring1.ClaimItAll()
 	ring1.GrantRangeToHost(ipMiddle, ipEndMinus, peer2name)
 	wt.AssertSuccess(t, ring2.merge(*ring1))
 
-	ring3.Entries = []*entry{{Token: startPlus, Peer: peer1name, Version: 1, Free: 127},
+	wt.AssertEquals(t, ring1.Entries, entries{{Token: startPlus, Peer: peer1name, Version: 1, Free: 127},
 		{Token: middle, Peer: peer2name, Free: 126},
-		{Token: endMinus, Peer: router.UnknownPeerName}}
+		{Token: endMinus, Peer: router.UnknownPeerName}})
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
-	wt.AssertEquals(t, ring1.Entries, ring3.Entries)
 
 	// Now to two different operations on either side,
 	// check we can merge again
@@ -178,11 +173,10 @@ func TestMergeSimple(t *testing.T) {
 	wt.AssertSuccess(t, ring2.merge(*ring1))
 	wt.AssertSuccess(t, ring1.merge(*ring2))
 
-	ring3.Entries = []*entry{{Token: startPlus, Peer: peer2name, Free: 127, Version: 2},
+	wt.AssertEquals(t, ring1.Entries, entries{{Token: startPlus, Peer: peer2name, Free: 127, Version: 2},
 		{Token: middle, Peer: peer1name, Version: 1, Free: 126},
-		{Token: endMinus, Peer: router.UnknownPeerName}}
+		{Token: endMinus, Peer: router.UnknownPeerName}})
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
-	wt.AssertEquals(t, ring1.Entries, ring3.Entries)
 }
 
 func TestMergeErrors(t *testing.T) {
@@ -218,10 +212,8 @@ func TestMergeMore(t *testing.T) {
 	ring1 := New(ipStart, ipEnd, peer1name)
 	ring2 := New(ipStart, ipEnd, peer2name)
 
-	assertRing := func(ring *Ring, entries []*entry) {
-		tempRing := New(ipStart, ipEnd, peer2name)
-		tempRing.Entries = entries
-		wt.AssertEquals(t, ring.Entries, tempRing.Entries)
+	assertRing := func(ring *Ring, entries entries) {
+		wt.AssertEquals(t, ring.Entries, entries)
 	}
 
 	assertRing(ring1, []*entry{})
@@ -285,10 +277,8 @@ func TestGossip(t *testing.T) {
 	ring1 := New(ipStart, ipEnd, peer1name)
 	ring2 := New(ipStart, ipEnd, peer2name)
 
-	assertRing := func(ring *Ring, entries []*entry) {
-		tempRing := New(ipStart, ipEnd, peer2name)
-		tempRing.Entries = entries
-		wt.AssertEquals(t, ring.Entries, tempRing.Entries)
+	assertRing := func(ring *Ring, entries entries) {
+		wt.AssertEquals(t, ring.Entries, entries)
 	}
 
 	assertRing(ring1, []*entry{})
