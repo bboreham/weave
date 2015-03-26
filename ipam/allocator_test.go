@@ -220,11 +220,11 @@ func TestFakeRouterSimple(t *testing.T) {
 func BenchmarkAllocator(b *testing.B) {
 	//common.InitDefaultLogging(true)
 	const (
-		firstpass    = 1022
+		firstpass    = 1000
 		secondpass   = 5000
-		nodes        = 2
-		maxAddresses = 1022
-		concurrency  = 1
+		nodes        = 10
+		maxAddresses = 1000
+		concurrency  = 10
 		cidr         = "10.0.1.7/22"
 	)
 	allocs, _ := makeNetworkOfAllocators(nodes, cidr)
