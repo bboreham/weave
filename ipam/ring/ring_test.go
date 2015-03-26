@@ -272,6 +272,27 @@ func TestMergeMore(t *testing.T) {
 		{Token: endMinus, Peer: router.UnknownPeerName}})
 }
 
+func TestMergeSplit(t *testing.T) {
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring2 := New(ipStart, ipEnd, peer2name)
+
+	// Claim everything for peer2
+	ring1.Entries = []*entry{{Token: start, Peer: peer2name, Free: 255}}
+	wt.AssertSuccess(t, ring2.merge(*ring1))
+	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
+
+	// Now grant a split range to peer1
+	ring2.GrantRangeToHost(ipDot10, ipDot245, peer1name)
+	wt.AssertEquals(t, ring2.Entries, entries{{Token: start, Peer: peer2name, Version: 1, Free: 10},
+		{Token: dot10, Peer: peer1name, Free: 235},
+		{Token: dot245, Peer: peer2name, Free: 10}})
+	wt.AssertSuccess(t, ring1.merge(*ring2))
+	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer2name, Version: 1, Free: 10},
+		{Token: dot10, Peer: peer1name, Free: 235},
+		{Token: dot245, Peer: peer2name, Free: 10}})
+	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
+}
+
 // A simple test, very similar to above, but using the marshalling to byte[]s
 func TestGossip(t *testing.T) {
 	ring1 := New(ipStart, ipEnd, peer1name)
