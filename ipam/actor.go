@@ -17,7 +17,7 @@ func (alloc *Allocator) Start() {
 
 // GetFor (Sync) - get IP address for container with given name
 func (alloc *Allocator) GetFor(ident string, cancelChan <-chan bool) net.IP {
-	resultChan := make(chan net.IP)
+	resultChan := make(chan net.IP, 1) // len 1 so actor can send while cancel is in progress
 	alloc.actionChan <- func() {
 		alloc.electLeaderIfNecessary()
 		if addrs, found := alloc.owned[ident]; found && len(addrs) > 0 {
