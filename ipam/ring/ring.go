@@ -110,18 +110,54 @@ func (r *Ring) distance(start, end uint32) uint32 {
 // is assigned to peer.  This may insert upto two new tokens.
 // Note, due to wrapping, end can be less than start
 func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
-	r.assertInvariants()
+	//fmt.Printf("%s GrantRangeToHost [%v,%v) -> %s\n", r.Peername, startIP, endIP, peer)
 
-	start, end := utils.IP4int(startIP), utils.IP4int(endIP)
+	var (
+		start, end = utils.IP4int(startIP), utils.IP4int(endIP)
+	)
+
+	r.assertInvariants()
+	defer r.assertInvariants()
+
+	// ----------------- Start of Checks -----------------
+
 	utils.Assert(r.Start <= start && start < r.End, "Trying to grant range outside of subnet")
 	utils.Assert(r.Start < end && end <= r.End, "Trying to grant range outside of subnet")
 	utils.Assert(len(r.Entries) > 0, "Cannot grant if ring is empty!")
+	utils.Assert(r.distance(start, end) > 0, "Cannot create zero-sized ranges")
 
-	// How much space will the new range have?
-	var newFree = r.distance(start, end)
-	utils.Assert(newFree > 0, "Cannot create zero-sized ranges")
+	// A note re:TOMBSTONES - this is tricky, as we need to do our checks on a
+	// view of the ring minus tombstones (new ranges can span tombstoned entries),
+	// but we need to modify the real ring.
 
-	// Look for the start entry
+	// Look for the right-most entry, less than of equal to start
+	filteredEntries := r.Entries.filteredEntries()
+	preceedingNode := sort.Search(len(filteredEntries), func(j int) bool {
+		return filteredEntries[j].Token > start
+	})
+	preceedingNode--
+
+	utils.Assert(len(filteredEntries) > 0, "Here be dragons")
+	utils.Assert(filteredEntries.entry(preceedingNode).Peer == r.Peername, "Trying to grant in a range I don't own")
+
+	// At the end, the check is a little trickier.  There is never an entry with
+	// a token of r.End, as the end of the ring is exclusive.  If we've asked to end == r.End,
+	// we actually want an entry with a token of r.Start - it might exist, or we
+	// might need to insert it.
+	expectedNextToken := end
+	if expectedNextToken == r.End {
+		expectedNextToken = r.Start
+	}
+
+	// Either the next non-tombstone token is the end token, or the end token is between
+	// the current and the next.
+	utils.Assert(filteredEntries.between(expectedNextToken, preceedingNode, preceedingNode+1) ||
+		filteredEntries.entry(preceedingNode+1).Token == expectedNextToken,
+		"Trying to grant spanning a token")
+
+	// ----------------- End of Checks -----------------
+
+	// Look for the start entry (in the real ring this time, ie could be a tombstone)
 	i := sort.Search(len(r.Entries), func(j int) bool {
 		return r.Entries[j].Token >= start
 	})
@@ -130,58 +166,63 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	// to change the token and update version
 	if i < len(r.Entries) && r.Entries[i].Token == start {
 		entry := r.Entries[i]
-		utils.Assert(entry.Peer == r.Peername, "Trying to mutate entry I don't own")
 		entry.Peer = peer
 		entry.Tombstone = 0
 		entry.Version++
-		entry.Free = newFree
+		entry.Free = r.distance(start, end)
 	} else {
-		// Otherwise, these isn't a token here, we need to
-		// find the preceeding token and check we own it (being careful for wrapping)
-		j := i - 1
-		utils.Assert(r.Entries.between(start, j, i), "??")
+		// Otherwise, these isn't a token here, insert a new one.
+		// Checks have already ensured we own this range.
+		r.Entries.insert(entry{Token: start, Peer: peer, Free: r.distance(start, end)})
 
-		previous := r.Entries.entry(j)
-		utils.Assert(previous.Peer == r.Peername, "Trying to mutate range I don't own")
-
-		// Reset free on previous token; may over estimate, but thats fine
+		// Reset free on previous (non-tombstone) token; may over estimate, but thats fine
+		previous := filteredEntries.entry(preceedingNode)
 		previous.Free = r.distance(previous.Token, start)
 		previous.Version++
-
-		r.Entries.insert(entry{Token: start, Peer: peer, Free: newFree})
 	}
 
 	r.assertInvariants()
 
 	// Now we need to deal with the end token.  There are 3 cases:
-	//   i.   the next token is equal to the end of the range
+	//   ia.  the next token is equal to the end of the range, and is not a tombstone
 	//        => we don't need to do anything
+	//   ib.  the next token is equal to the end of the range, but is a tombstone
+	//        => resurrect it for this host, increment version number.
 	//   ii.  the end is between this token and the next,
-	//        => we need to insert a token such that
-	//        we claim this bit on the end.
-	//   iii. the end is not between this token and next
-	//        => this is an error, we'll be splitting someone
-	//        else's ranges.
+	//        => we need to insert a token such that we claim this bit on the end.
+	//   iii. the end is not between this token and next, but the interveening tokens
+	//        are all tombstones.
+	//        => this is fine, insert away - no need to check, we did that already
+	//   iv.  the end is not between this token and next, and there is a non-tombstone in
+	//        the way.
+	//        => this is an error, we'll be splitting someone else's ranges.
+	//           We checked at the top for this case.
 
+	// Now looks for the next non-tombstone entry
 	k := i + 1
-	nextEntry := r.Entries.entry(k)
+	endEntry, found := r.Entries.get(expectedNextToken)
 
-	// There is a special case when end == ring.End
-	if end == r.End {
-		end = r.Start
-	}
+	switch {
+	// Case i(a) - there is already token at the end, and its not a tombstone
+	case found && endEntry.Token == expectedNextToken && endEntry.Tombstone == 0:
+		return // do nothing; that was easy
 
-	// Case i
-	if nextEntry.Token == end {
-		// That was easy
+	// Case i(b) - there is already token at the end, buts its a tombstone
+	case found && endEntry.Token == expectedNextToken && endEntry.Tombstone > 0:
+		endEntry.Peer = r.Peername
+		endEntry.Tombstone = 0
+		endEntry.Version++
+		// TODO this could underestimate, as next entry might be a tombstone
+		endEntry.Free = r.distance(expectedNextToken, r.Entries.entry(k+1).Token)
 		return
-	}
 
-	// Case ii (case iii should never happen)
-	utils.Assert(r.Entries.between(end, i, k), "End spans another token")
-	distance := r.distance(end, r.Entries.entry(k).Token)
-	r.Entries.insert(entry{Token: end, Peer: r.Peername, Free: distance})
-	r.assertInvariants()
+	// Case ii & iii
+	default:
+		utils.Assert(!found, "WTF")
+		// This could underestimate, as entry token could be a tombstone
+		distance := r.distance(expectedNextToken, r.Entries.entry(k).Token)
+		r.Entries.insert(entry{Token: expectedNextToken, Peer: r.Peername, Free: distance})
+	}
 }
 
 // Merge the given ring into this ring.

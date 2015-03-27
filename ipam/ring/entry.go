@@ -65,6 +65,18 @@ func (es *entries) insert(e entry) {
 	(*es)[i] = &e
 }
 
+func (es entries) get(token uint32) (*entry, bool) {
+	i := sort.Search(len(es), func(j int) bool {
+		return es[j].Token >= token
+	})
+
+	if i < len(es) && es[i].Token == token {
+		return es[i], true
+	}
+
+	return nil, false
+}
+
 // Is token between entries at i and j?
 // NB i and j can overflow and will wrap
 // NBB if entries[i].token == token, this will return true
