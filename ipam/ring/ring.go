@@ -175,7 +175,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		// Checks have already ensured we own this range.
 		r.Entries.insert(entry{Token: start, Peer: peer, Free: r.distance(start, end)})
 
-		// Reset free on previous (non-tombstone) token; may over estimate, but thats fine
+		// Reset free on previous (non-tombstone) token
 		previous := filteredEntries.entry(preceedingNode)
 		previous.Free = r.distance(previous.Token, start)
 		previous.Version++
@@ -244,6 +244,7 @@ func (r *Ring) merge(gossip Ring) error {
 	addToResult := func(e entry) { result = append(result, &e) }
 
 	var mine, theirs *entry
+	var previousOwner *router.PeerName
 	// i is index into r.Entries; j is index into gossip.Entries
 	var i, j int
 	for i < len(r.Entries) && j < len(gossip.Entries) {
@@ -251,29 +252,35 @@ func (r *Ring) merge(gossip Ring) error {
 		switch {
 		case mine.Token < theirs.Token:
 			addToResult(*mine)
+			if mine.Tombstone == 0 {
+				previousOwner = &mine.Peer
+			}
 			i++
 		case mine.Token > theirs.Token:
 			// insert, checking that a range owned by us hasn't been split
-			if r.Entries.entry(i-1).Peer == r.Peername && theirs.Peer != r.Peername {
+			if previousOwner != nil && *previousOwner == r.Peername && theirs.Peer != r.Peername {
 				return ErrEntryInMyRange
 			}
 			addToResult(*theirs)
+			previousOwner = nil
 			j++
 		case mine.Token == theirs.Token:
 			// merge
 			switch {
-			case mine.Version > theirs.Version:
-				addToResult(*mine)
-			case mine.Version == theirs.Version:
-				if !mine.Equal(theirs) {
+			case mine.Version >= theirs.Version:
+				if mine.Version == theirs.Version && !mine.Equal(theirs) {
 					return ErrInvalidEntry
 				}
 				addToResult(*mine)
+				if mine.Tombstone == 0 {
+					previousOwner = &mine.Peer
+				}
 			case mine.Version < theirs.Version:
 				if mine.Peer == r.Peername { // We shouldn't receive updates to our own tokens
 					return ErrNewerVersion
 				}
 				addToResult(*theirs)
+				previousOwner = nil
 			}
 			i++
 			j++
@@ -290,10 +297,11 @@ func (r *Ring) merge(gossip Ring) error {
 
 	for ; j < len(gossip.Entries); j++ {
 		theirs = gossip.Entries[j]
-		if mine != nil && mine.Peer == r.Peername && theirs.Peer != r.Peername {
+		if previousOwner != nil && *previousOwner == r.Peername && theirs.Peer != r.Peername {
 			return ErrEntryInMyRange
 		}
 		addToResult(*theirs)
+		previousOwner = nil
 	}
 
 	r.Entries = result
