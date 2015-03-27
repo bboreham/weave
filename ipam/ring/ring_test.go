@@ -16,6 +16,7 @@ import (
 var (
 	peer1name, _ = router.PeerNameFromString("01:00:00:00:02:00")
 	peer2name, _ = router.PeerNameFromString("02:00:00:00:02:00")
+	peer3name, _ = router.PeerNameFromString("03:00:00:00:02:00")
 
 	ipStart, ipEnd          = net.ParseIP("10.0.0.0"), net.ParseIP("10.0.0.255")
 	ipStartPlus, ipEndMinus = net.ParseIP("10.0.0.1"), net.ParseIP("10.0.0.254")
@@ -491,6 +492,36 @@ func TestTombstoneSimple(t *testing.T) {
 
 	ring1.GrantRangeToHost(ipStartPlus, ipDot245, peer2name)
 	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{ipDot245, ipEndMinus}}), "Invalid")
+}
+
+func TestTombstoneMerge(t *testing.T) {
+	// First check that a peer panics if its told it has been tombstoned
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring2 := New(ipStart, ipEnd, peer2name)
+	ring1.ClaimItAll()
+	ring1.GrantRangeToHost(ipMiddle, ipEndMinus, peer2name)
+	wt.AssertSuccess(t, ring2.merge(*ring1))
+	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
+	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{ipStartPlus, ipMiddle}}), "Invalid")
+	wt.AssertTrue(t, RangesEqual(ring2.OwnedRanges(), []Range{{ipMiddle, ipEndMinus}}), "Invalid")
+
+	ring1.TombstonePeer(peer2name, 10)
+	wt.AssertPanic(t, func() {
+		ring2.merge(*ring1)
+	})
+
+	// First check we can merge tombstones for a third peer
+	ring1 = New(ipStart, ipEnd, peer1name)
+	ring2 = New(ipStart, ipEnd, peer2name)
+	ring1.ClaimItAll()
+	ring1.GrantRangeToHost(ipMiddle, ipEndMinus, peer3name)
+	wt.AssertSuccess(t, ring2.merge(*ring1))
+
+	ring1.TombstonePeer(peer3name, 10)
+	wt.AssertSuccess(t, ring2.merge(*ring1))
+	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
+	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{ipStartPlus, ipEndMinus}}), "Invalid")
+	wt.AssertTrue(t, RangesEqual(ring2.OwnedRanges(), []Range{}), "Invalid")
 }
 
 type uint32slice []uint32

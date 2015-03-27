@@ -242,6 +242,14 @@ func (r *Ring) merge(gossip Ring) error {
 		return ErrDifferentSubnets
 	}
 
+	// If thy receive a ring in which thy has been tombstoned, kill thyself
+	for _, entry := range gossip.Entries {
+		if entry.Peer == r.Peername && entry.Tombstone > 0 {
+			panic("Ah! I've been shot")
+		}
+	}
+
+	// Now merge their ring with yours, in a temporary ring.
 	var result entries
 	addToResult := func(e entry) { result = append(result, &e) }
 
