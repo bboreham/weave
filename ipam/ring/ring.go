@@ -76,8 +76,9 @@ func (r *Ring) checkInvariants() error {
 
 	// Check all the freespaces are in range
 	// NB for this check, we ignore tombstones
-	for i, entry := range r.Entries.filteredEntries() {
-		next := r.Entries.entry(i + 1)
+	entries := r.Entries.filteredEntries()
+	for i, entry := range entries {
+		next := entries.entry(i + 1)
 		distance := r.distance(entry.Token, next.Token)
 
 		if entry.Free > distance {
@@ -492,6 +493,7 @@ func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
 // TombstonePeer will mark all entries associated with this peer as tombstones
 func (r *Ring) TombstonePeer(peer router.PeerName, dt int64) {
 	utils.Assert(peer != r.Peername, "Cannot tombstone yourself")
+	utils.Assert(dt > 0, "dt must be greater than 0!")
 
 	absTimeout := time.Now().Unix() + dt
 

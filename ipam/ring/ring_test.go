@@ -463,6 +463,36 @@ func TestOwnedRange(t *testing.T) {
 			{Start: ipMiddle, End: ipEnd}}), "invalid")
 }
 
+func TestTombstoneSimple(t *testing.T) {
+	// First test just checks if we can grant some range to a host, when we tombstone it, we get it back
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring1.ClaimItAll()
+	ring1.GrantRangeToHost(ipMiddle, ipEndMinus, peer2name)
+	ring1.TombstonePeer(peer2name, 10)
+	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{ipStartPlus, ipEndMinus}}), "Invalid")
+
+	// Second test is what happens when a token exists at the end of a range but is a tombstone
+	// - does it get resurrected correctly?
+	ring1 = New(ipStart, ipEnd, peer1name)
+	ring1.ClaimItAll()
+	ring1.GrantRangeToHost(ipMiddle, ipEndMinus, peer2name)
+	ring1.TombstonePeer(peer2name, 10)
+	ring1.GrantRangeToHost(ipDot10, ipMiddle, peer2name)
+	// TODO - if we tombstone the chap owning ipStartPlus, the range ipEndMinus -> next token is lost forever!
+	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{ipStartPlus, ipDot10}, {ipMiddle, ipEndMinus}}), "Invalid")
+
+	// Final test - can we grant range that span tombstones?
+	ring1 = New(ipStart, ipEnd, peer1name)
+	ring1.ClaimItAll()
+	ring1.GrantRangeToHost(ipDot10, ipDot245, peer2name)
+	ring1.TombstonePeer(peer2name, 10)
+	// NB split ranges are not automatically re-merged!
+	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{ipStartPlus, ipDot245}, {ipDot245, ipEndMinus}}), "Invalid")
+
+	ring1.GrantRangeToHost(ipStartPlus, ipDot245, peer2name)
+	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{ipDot245, ipEndMinus}}), "Invalid")
+}
+
 type uint32slice []uint32
 
 func (s uint32slice) Len() int           { return len(s) }
