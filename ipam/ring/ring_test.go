@@ -54,16 +54,16 @@ func TestInsert(t *testing.T) {
 	ring.Entries = []*entry{{Token: start, Peer: peer1name, Free: 255}}
 
 	wt.AssertPanic(t, func() {
-		ring.insert(entry{Token: start, Peer: peer1name})
+		ring.Entries.insert(entry{Token: start, Peer: peer1name})
 	})
 
-	ring.entry(0).Free = 0
-	ring.insert(entry{Token: dot245, Peer: peer1name})
+	ring.Entries.entry(0).Free = 0
+	ring.Entries.insert(entry{Token: dot245, Peer: peer1name})
 	ring2 := New(ipStart, ipEnd, peer1name)
 	ring2.Entries = []*entry{{Token: start, Peer: peer1name, Free: 0}, {Token: dot245, Peer: peer1name}}
 	wt.AssertEquals(t, ring, ring2)
 
-	ring.insert(entry{Token: dot10, Peer: peer1name})
+	ring.Entries.insert(entry{Token: dot10, Peer: peer1name})
 	ring2.Entries = []*entry{{Token: start, Peer: peer1name, Free: 0}, {Token: dot10, Peer: peer1name}, {Token: dot245, Peer: peer1name}}
 	wt.AssertEquals(t, ring, ring2)
 }
@@ -76,7 +76,7 @@ func TestBetween(t *testing.T) {
 	// between should return true for everything
 	for i := 1; i <= 255; i++ {
 		ip := utils.IP4int(net.ParseIP(fmt.Sprintf("10.0.0.%d", i)))
-		wt.AssertTrue(t, ring1.between(ip, 0, 1), "between should be true!")
+		wt.AssertTrue(t, ring1.Entries.between(ip, 0, 1), "between should be true!")
 	}
 
 	// Now, construct a ring with entries at +10 and -10
@@ -87,25 +87,25 @@ func TestBetween(t *testing.T) {
 	for i := 10; i <= 244; i++ {
 		ipStr := fmt.Sprintf("10.0.0.%d", i)
 		ip := utils.IP4int(net.ParseIP(ipStr))
-		wt.AssertTrue(t, ring1.between(ip, 0, 1),
+		wt.AssertTrue(t, ring1.Entries.between(ip, 0, 1),
 			fmt.Sprintf("Between should be true for %s!", ipStr))
-		wt.AssertFalse(t, ring1.between(ip, 1, 2),
+		wt.AssertFalse(t, ring1.Entries.between(ip, 1, 2),
 			fmt.Sprintf("Between should be false for %s!", ipStr))
 	}
 	for i := 0; i <= 9; i++ {
 		ipStr := fmt.Sprintf("10.0.0.%d", i)
 		ip := utils.IP4int(net.ParseIP(ipStr))
-		wt.AssertFalse(t, ring1.between(ip, 0, 1),
+		wt.AssertFalse(t, ring1.Entries.between(ip, 0, 1),
 			fmt.Sprintf("Between should be false for %s!", ipStr))
-		wt.AssertTrue(t, ring1.between(ip, 1, 2),
+		wt.AssertTrue(t, ring1.Entries.between(ip, 1, 2),
 			fmt.Sprintf("Between should be true for %s!", ipStr))
 	}
 	for i := 245; i <= 255; i++ {
 		ipStr := fmt.Sprintf("10.0.0.%d", i)
 		ip := utils.IP4int(net.ParseIP(ipStr))
-		wt.AssertFalse(t, ring1.between(ip, 0, 1),
+		wt.AssertFalse(t, ring1.Entries.between(ip, 0, 1),
 			fmt.Sprintf("Between should be false for %s!", ipStr))
-		wt.AssertTrue(t, ring1.between(ip, 1, 2),
+		wt.AssertTrue(t, ring1.Entries.between(ip, 1, 2),
 			fmt.Sprintf("Between should be true for %s!", ipStr))
 	}
 }
@@ -455,6 +455,11 @@ func TestOwnedRange(t *testing.T) {
 	ring2.Entries = []*entry{{Token: middle, Peer: peer2name}}
 	wt.AssertTrue(t, RangesEqual(ring2.OwnedRanges(),
 		[]Range{{Start: ipStart, End: ipMiddle}, {Start: ipMiddle, End: ipEnd}}), "invalid")
+
+	ring2.Entries = []*entry{{Token: dot10, Peer: peer2name}, {Token: middle, Peer: peer2name}}
+	wt.AssertTrue(t, RangesEqual(ring2.OwnedRanges(),
+		[]Range{{Start: ipStart, End: ipDot10}, {Start: ipDot10, End: ipMiddle},
+			{Start: ipMiddle, End: ipEnd}}), "invalid")
 }
 
 type uint32slice []uint32

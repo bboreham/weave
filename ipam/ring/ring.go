@@ -11,46 +11,14 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"github.com/zettio/weave/ipam/utils"
-	"github.com/zettio/weave/router"
 	"math/rand"
 	"net"
 	"sort"
+	"time"
+
+	"github.com/zettio/weave/ipam/utils"
+	"github.com/zettio/weave/router"
 )
-
-// Entry represents entries around the ring
-type entry struct {
-	Token     uint32          // The start of this range
-	Peer      router.PeerName // Who owns this range
-	Tombstone uint32          // Timestamp when this entry was tombstone; 0 means live
-	Version   uint32          // Version of this range
-	Free      uint32          // Number of free IPs in this range
-}
-
-func (e1 *entry) Equal(e2 *entry) bool {
-	return e1.Token == e2.Token && e1.Peer == e2.Peer &&
-		e1.Tombstone == e2.Tombstone && e1.Version == e2.Version
-}
-
-// For compatibility with sort.Interface
-type entries []*entry
-
-func (es entries) Len() int           { return len(es) }
-func (es entries) Less(i, j int) bool { return es[i].Token < es[j].Token }
-func (es entries) Swap(i, j int)      { panic("Should never be swapping entries!") }
-
-func (es entries) String() string {
-	var buffer bytes.Buffer
-	fmt.Fprintf(&buffer, "[")
-	for i, entry := range es {
-		fmt.Fprintf(&buffer, "%+v", *entry)
-		if i+1 < len(es) {
-			fmt.Fprintf(&buffer, " ")
-		}
-	}
-	fmt.Fprintf(&buffer, "]")
-	return buffer.String()
-}
 
 // Ring represents the ring itself
 type Ring struct {
@@ -98,17 +66,18 @@ func (r *Ring) checkInvariants() error {
 	}
 
 	// Check tokens are in range
-	if r.entry(0).Token < r.Start {
+	if r.Entries.entry(0).Token < r.Start {
 		return ErrTokenOutOfRange
 	}
 
-	if r.entry(-1).Token >= r.End {
+	if r.Entries.entry(-1).Token >= r.End {
 		return ErrTokenOutOfRange
 	}
 
 	// Check all the freespaces are in range
-	for i, entry := range r.Entries {
-		next := r.entry(i + 1)
+	// NB for this check, we ignore tombstones
+	for i, entry := range r.Entries.filteredEntries() {
+		next := r.Entries.entry(i + 1)
 		distance := r.distance(entry.Token, next.Token)
 
 		if entry.Free > distance {
@@ -119,24 +88,6 @@ func (r *Ring) checkInvariants() error {
 	return nil
 }
 
-func (r *Ring) insert(e entry) {
-	r.assertInvariants()
-
-	i := sort.Search(len(r.Entries), func(j int) bool {
-		return r.Entries[j].Token >= e.Token
-	})
-
-	if i < len(r.Entries) && r.Entries[i].Token == e.Token {
-		panic("Trying to insert an existing token!")
-	}
-
-	r.Entries = append(r.Entries, &entry{})
-	copy(r.Entries[i+1:], r.Entries[i:])
-	r.Entries[i] = &e
-
-	r.assertInvariants()
-}
-
 // New creates an empty ring belonging to peer.
 func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
 	start, end := utils.IP4int(startIP), utils.IP4int(endIP)
@@ -145,41 +96,8 @@ func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
 	return &Ring{start, end, peer, make([]*entry, 0)}
 }
 
-func (r *Ring) entry(i int) *entry {
-	i = i % len(r.Entries)
-	if i < 0 {
-		i += len(r.Entries)
-	}
-	return r.Entries[i]
-}
-
-// Is token between entries at i and j?
-// NB i and j can overflow and will wrap
-// NBB if entries[i].token == token, this will return true
-func (r *Ring) between(token uint32, i, j int) bool {
-	utils.Assert(i < j, "Start and end must be in order")
-
-	first := r.entry(i)
-	second := r.entry(j)
-
-	switch {
-	case first.Token == second.Token:
-		// This implies there is only one token
-		// on the ring (i < j and i.token == j.token)
-		// In which case everything is between, expect
-		// this one token
-		return token != first.Token
-
-	case first.Token < second.Token:
-		return first.Token <= token && token < second.Token
-
-	case second.Token < first.Token:
-		return first.Token <= token || token < second.Token
-	}
-
-	panic("Should never get here - switch covers all possibilities.")
-}
-
+// Returns the distance between two tokens on this ring, deali
+// with ranges with cross the origin
 func (r *Ring) distance(start, end uint32) uint32 {
 	if end > start {
 		return end - start
@@ -221,16 +139,16 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		// Otherwise, these isn't a token here, we need to
 		// find the preceeding token and check we own it (being careful for wrapping)
 		j := i - 1
-		utils.Assert(r.between(start, j, i), "??")
+		utils.Assert(r.Entries.between(start, j, i), "??")
 
-		previous := r.entry(j)
+		previous := r.Entries.entry(j)
 		utils.Assert(previous.Peer == r.Peername, "Trying to mutate range I don't own")
 
 		// Reset free on previous token; may over estimate, but thats fine
 		previous.Free = r.distance(previous.Token, start)
 		previous.Version++
 
-		r.insert(entry{Token: start, Peer: peer, Free: newFree})
+		r.Entries.insert(entry{Token: start, Peer: peer, Free: newFree})
 	}
 
 	r.assertInvariants()
@@ -246,7 +164,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	//        else's ranges.
 
 	k := i + 1
-	nextEntry := r.entry(k)
+	nextEntry := r.Entries.entry(k)
 
 	// There is a special case when end == ring.End
 	if end == r.End {
@@ -260,9 +178,9 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	}
 
 	// Case ii (case iii should never happen)
-	utils.Assert(r.between(end, i, k), "End spans another token")
-	distance := r.distance(end, r.entry(k).Token)
-	r.insert(entry{Token: end, Peer: r.Peername, Free: distance})
+	utils.Assert(r.Entries.between(end, i, k), "End spans another token")
+	distance := r.distance(end, r.Entries.entry(k).Token)
+	r.Entries.insert(entry{Token: end, Peer: r.Peername, Free: distance})
 	r.assertInvariants()
 }
 
@@ -295,7 +213,7 @@ func (r *Ring) merge(gossip Ring) error {
 			i++
 		case mine.Token > theirs.Token:
 			// insert, checking that a range owned by us hasn't been split
-			if r.entry(i-1).Peer == r.Peername && theirs.Peer != r.Peername {
+			if r.Entries.entry(i-1).Peer == r.Peername && theirs.Peer != r.Peername {
 				return ErrEntryInMyRange
 			}
 			addToResult(*theirs)
@@ -368,6 +286,8 @@ func (r *Ring) GossipState() []byte {
 }
 
 // Empty returns true if the ring has no entries
+// NB this test includes Tombstones.
+// TODO reconsider what happens if you delete every node from the ring?
 func (r *Ring) Empty() bool {
 	return len(r.Entries) == 0
 }
@@ -382,48 +302,48 @@ type Range struct {
 // ranges are owned by this peer.  Will split ranges which
 // span 0 in the ring.
 func (r *Ring) OwnedRanges() []Range {
-	// Cannot return more the entries + 1 results
-	// +1 for splitting results spanning 0
-	result := make([]Range, len(r.Entries)+1)
-	j := 0 // index into above slice
+	var (
+		result  []Range
+		entries = r.Entries.filteredEntries() // We can ignore tombstones in this method
+	)
+	r.assertInvariants()
+	defer r.assertInvariants()
 
 	// Finally iterate through entries again
 	// filling in result as we go.
-	for i, entry := range r.Entries {
+	for i, entry := range entries {
 		if entry.Peer != r.Peername {
 			continue
 		}
 
 		// next logical token in ring; be careful of
 		// wrapping the index
-		nextEntry := r.entry(i + 1)
+		nextEntry := entries.entry(i + 1)
 
 		switch {
 		case nextEntry.Token == r.Start:
 			// be careful here; if end token == start (ie last)
 			// entry on ring, we want to actually use r.End
-			result[j] = Range{Start: utils.IntIP4(entry.Token),
-				End: utils.IntIP4(r.End)}
-			j++
+			result = append(result, Range{Start: utils.IntIP4(entry.Token),
+				End: utils.IntIP4(r.End)})
 
 		case nextEntry.Token <= entry.Token:
 			// We wrapped; want to split around 0
 			// First shuffle everything up as we want results to be sorted
-			copy(result[1:j+1], result[:j])
+			result = append(result, Range{})
+			copy(result[1:], result[:len(result)-1])
 			result[0] = Range{Start: utils.IntIP4(r.Start),
 				End: utils.IntIP4(nextEntry.Token)}
-			result[j+1] = Range{Start: utils.IntIP4(entry.Token),
-				End: utils.IntIP4(r.End)}
-			j = j + 2
+			result = append(result, Range{Start: utils.IntIP4(entry.Token),
+				End: utils.IntIP4(r.End)})
 
 		default:
-			result[j] = Range{Start: utils.IntIP4(entry.Token),
-				End: utils.IntIP4(nextEntry.Token)}
-			j++
+			result = append(result, Range{Start: utils.IntIP4(entry.Token),
+				End: utils.IntIP4(nextEntry.Token)})
 		}
 	}
 
-	return result[:j]
+	return result
 }
 
 // ClaimItAll claims the entire ring for this peer.  Only works for empty rings.
@@ -433,9 +353,9 @@ func (r *Ring) ClaimItAll() {
 	// We reserve the first and last address with a special range; this ensures
 	// they are never given out by anyone
 	// Per RFC1122, don't allocate the first (network) and last (broadcast) addresses
-	r.insert(entry{Token: r.Start + 1, Peer: r.Peername,
+	r.Entries.insert(entry{Token: r.Start + 1, Peer: r.Peername,
 		Free: r.End - r.Start - 2})
-	r.insert(entry{Token: r.End - 1, Peer: router.UnknownPeerName})
+	r.Entries.insert(entry{Token: r.End - 1, Peer: router.UnknownPeerName})
 
 	r.assertInvariants()
 }
@@ -454,35 +374,41 @@ func (r *Ring) String() string {
 // can make more intelligent decisions.
 func (r *Ring) ReportFree(startIP net.IP, free uint32) {
 	start := utils.IP4int(startIP)
+	entries := r.Entries.filteredEntries() // We don't want to report free on tombstones
 
 	// Look for entry
-	i := sort.Search(len(r.Entries), func(j int) bool {
-		return r.Entries[j].Token >= start
+	i := sort.Search(len(entries), func(j int) bool {
+		return entries[j].Token >= start
 	})
 
-	utils.Assert(i < len(r.Entries) && r.Entries[i].Token == start &&
-		r.Entries[i].Peer == r.Peername, "Trying to report free on space I don't own")
+	utils.Assert(i < len(entries) && entries[i].Token == start &&
+		entries[i].Peer == r.Peername, "Trying to report free on space I don't own")
 
 	// Check we're not reporting more space than the range
-	entry, next := r.entry(i), r.entry(i+1)
+	entry, next := entries.entry(i), entries.entry(i+1)
 	maxSize := r.distance(entry.Token, next.Token)
 	utils.Assert(free <= maxSize, "Trying to report more free space than possible")
 
-	if r.Entries[i].Free == free {
+	if entries[i].Free == free {
 		return
 	}
 
-	r.Entries[i].Free = free
-	r.Entries[i].Version++
+	entries[i].Free = free
+	entries[i].Version++
 }
 
-// ChoosePeerToAskForSpace chooses a weightes-random peer to ask
+// ChoosePeerToAskForSpace chooses a weighted-random peer to ask
 // for space.
 func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
-	// Compute total free space per peer
-	var sum uint32
-	totalSpacePerPeer := make(map[router.PeerName]uint32)
-	for _, entry := range r.Entries {
+	var (
+		sum               uint32
+		totalSpacePerPeer = make(map[router.PeerName]uint32) // Compute total free space per peer
+	)
+
+	// iterate through tokens IGNORING tombstones
+	for _, entry := range r.Entries.filteredEntries() {
+		utils.Assert(entry.Tombstone == 0, "List shouldn't contain tombstoned entries")
+
 		// Ignore ranges with no free space
 		if entry.Free <= 0 {
 			continue
@@ -512,4 +438,18 @@ func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
 	}
 
 	panic("Should never reach this point")
+}
+
+// TombstonePeer will mark all entries associated with this peer as tombstones
+func (r *Ring) TombstonePeer(peer router.PeerName, dt int64) {
+	utils.Assert(peer != r.Peername, "Cannot tombstone yourself")
+
+	absTimeout := time.Now().Unix() + dt
+
+	for _, entry := range r.Entries {
+		if entry.Peer == peer {
+			entry.Tombstone = absTimeout
+			entry.Version++
+		}
+	}
 }
