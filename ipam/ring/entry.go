@@ -1,8 +1,6 @@
 package ring
 
 import (
-	"bytes"
-	"fmt"
 	"sort"
 
 	"github.com/zettio/weave/ipam/utils"
@@ -29,19 +27,6 @@ type entries []*entry
 func (es entries) Len() int           { return len(es) }
 func (es entries) Less(i, j int) bool { return es[i].Token < es[j].Token }
 func (es entries) Swap(i, j int)      { panic("Should never be swapping entries!") }
-
-func (es entries) String() string {
-	var buffer bytes.Buffer
-	fmt.Fprintf(&buffer, "[")
-	for i, entry := range es {
-		fmt.Fprintf(&buffer, "%+v", *entry)
-		if i+1 < len(es) {
-			fmt.Fprintf(&buffer, " ")
-		}
-	}
-	fmt.Fprintf(&buffer, "]")
-	return buffer.String()
-}
 
 func (es entries) entry(i int) *entry {
 	i = i % len(es)

@@ -1,6 +1,7 @@
 package ring
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"net"
@@ -609,4 +610,17 @@ func TestFuzzRingHard(t *testing.T) {
 		//fmt.Printf("%s: 'Gossiping' to %s\n", ring1.Peername, ring2.Peername)
 		wt.AssertSuccess(t, ring2.merge(*ring1))
 	}
+}
+
+func (es entries) String() string {
+	var buffer bytes.Buffer
+	fmt.Fprintf(&buffer, "[")
+	for i, entry := range es {
+		fmt.Fprintf(&buffer, "%+v", *entry)
+		if i+1 < len(es) {
+			fmt.Fprintf(&buffer, " ")
+		}
+	}
+	fmt.Fprintf(&buffer, "]")
+	return buffer.String()
 }
