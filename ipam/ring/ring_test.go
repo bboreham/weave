@@ -2,16 +2,19 @@ package ring
 
 import (
 	"fmt"
+	"math/rand"
+	"net"
+	"sort"
+	"testing"
+
 	"github.com/zettio/weave/ipam/utils"
 	"github.com/zettio/weave/router"
 	wt "github.com/zettio/weave/testing"
-	"net"
-	"testing"
 )
 
 var (
-	peer1name, _ = router.PeerNameFromString("01:00:00:00:00:00")
-	peer2name, _ = router.PeerNameFromString("02:00:00:00:00:00")
+	peer1name, _ = router.PeerNameFromString("01:00:00:00:02:00")
+	peer2name, _ = router.PeerNameFromString("02:00:00:00:02:00")
 
 	ipStart, ipEnd          = net.ParseIP("10.0.0.0"), net.ParseIP("10.0.0.255")
 	ipStartPlus, ipEndMinus = net.ParseIP("10.0.0.1"), net.ParseIP("10.0.0.254")
@@ -51,16 +54,16 @@ func TestInsert(t *testing.T) {
 	ring.Entries = []*entry{{Token: start, Peer: peer1name, Free: 255}}
 
 	wt.AssertPanic(t, func() {
-		ring.insertAt(0, entry{Token: start, Peer: peer1name})
+		ring.insert(entry{Token: start, Peer: peer1name})
 	})
 
 	ring.entry(0).Free = 0
-	ring.insertAt(1, entry{Token: dot245, Peer: peer1name})
+	ring.insert(entry{Token: dot245, Peer: peer1name})
 	ring2 := New(ipStart, ipEnd, peer1name)
 	ring2.Entries = []*entry{{Token: start, Peer: peer1name, Free: 0}, {Token: dot245, Peer: peer1name}}
 	wt.AssertEquals(t, ring, ring2)
 
-	ring.insertAt(1, entry{Token: dot10, Peer: peer1name})
+	ring.insert(entry{Token: dot10, Peer: peer1name})
 	ring2.Entries = []*entry{{Token: start, Peer: peer1name, Free: 0}, {Token: dot10, Peer: peer1name}, {Token: dot245, Peer: peer1name}}
 	wt.AssertEquals(t, ring, ring2)
 }
@@ -452,4 +455,153 @@ func TestOwnedRange(t *testing.T) {
 	ring2.Entries = []*entry{{Token: middle, Peer: peer2name}}
 	wt.AssertTrue(t, RangesEqual(ring2.OwnedRanges(),
 		[]Range{{Start: ipStart, End: ipMiddle}, {Start: ipMiddle, End: ipEnd}}), "invalid")
+}
+
+type uint32slice []uint32
+
+func (s uint32slice) Len() int           { return len(s) }
+func (s uint32slice) Less(i, j int) bool { return s[i] < s[j] }
+func (s uint32slice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+
+func TestFuzzRing(t *testing.T) {
+	var (
+		numPeers   = 25
+		iterations = 1000
+	)
+
+	peers := make([]router.PeerName, numPeers)
+	for i := 0; i < numPeers; i++ {
+		peer, _ := router.PeerNameFromString(fmt.Sprintf("%02d:00:00:00:02:00", i))
+		peers[i] = peer
+	}
+
+	// Make a valid, random ring
+	makeGoodRandomRing := func() *Ring {
+		addressSpace := end - start
+		numTokens := rand.Intn(int(addressSpace))
+
+		tokenMap := make(map[uint32]bool)
+		for i := 0; i < numTokens; i++ {
+			tokenMap[uint32(rand.Intn(int(addressSpace)))] = true
+		}
+		var tokens []uint32
+		for token := range tokenMap {
+			tokens = append(tokens, token)
+		}
+		sort.Sort(uint32slice(tokens))
+
+		peer := peers[rand.Intn(len(peers))]
+		ring := New(ipStart, ipEnd, peer)
+		for _, token := range tokens {
+			peer = peers[rand.Intn(len(peers))]
+			ring.Entries = append(ring.Entries, &entry{Token: start + token, Peer: peer})
+		}
+
+		ring.assertInvariants()
+		return ring
+	}
+
+	for i := 0; i < iterations; i++ {
+		// make 2 random rings
+		ring1 := makeGoodRandomRing()
+		ring2 := makeGoodRandomRing()
+
+		// Merge them - this might fail, we don't care
+		// We just want to make sure it doest panic
+		ring1.merge(*ring2)
+
+		// Check whats left still passes assertions
+		ring1.assertInvariants()
+		ring2.assertInvariants()
+	}
+
+	// Make an invalid, random ring
+	makeBadRandomRing := func() *Ring {
+		addressSpace := end - start
+		numTokens := rand.Intn(int(addressSpace))
+		tokens := make([]uint32, numTokens)
+		for i := 0; i < numTokens; i++ {
+			tokens[i] = uint32(rand.Intn(int(addressSpace)))
+		}
+
+		peer := peers[rand.Intn(len(peers))]
+		ring := New(ipStart, ipEnd, peer)
+		for _, token := range tokens {
+			peer = peers[rand.Intn(len(peers))]
+			ring.Entries = append(ring.Entries, &entry{Token: start + token, Peer: peer})
+		}
+
+		return ring
+	}
+
+	for i := 0; i < iterations; i++ {
+		// make 2 random rings
+		ring1 := makeGoodRandomRing()
+		ring2 := makeBadRandomRing()
+
+		// Merge them - this might fail, we don't care
+		// We just want to make sure it doest panic
+		ring1.merge(*ring2)
+
+		// Check whats left still passes assertions
+		ring1.assertInvariants()
+	}
+}
+
+func TestFuzzRingHard(t *testing.T) {
+	var (
+		numPeers   = 100
+		iterations = 2000
+	)
+
+	peers := make([]router.PeerName, numPeers)
+	rings := make([]*Ring, numPeers)
+	for i := 0; i < numPeers; i++ {
+		peer, _ := router.PeerNameFromString(fmt.Sprintf("%02d:00:00:00:00:00", i))
+		peers[i] = peer
+		rings[i] = New(ipStart, ipEnd, peer)
+	}
+
+	rings[0].ClaimItAll()
+
+	for i := 0; i < iterations; i++ {
+		var ringsWithRanges []*Ring
+		for _, ring := range rings {
+			if len(ring.OwnedRanges()) > 0 {
+				ringsWithRanges = append(ringsWithRanges, ring)
+			}
+		}
+
+		if len(ringsWithRanges) > 0 {
+			// Produce a random split in a random owned range, given to a random peer
+			ring := ringsWithRanges[rand.Intn(len(ringsWithRanges))]
+			ownedRanges := ring.OwnedRanges()
+			rangeToSplit := ownedRanges[rand.Intn(len(ownedRanges))]
+			size := utils.Subtract(rangeToSplit.End, rangeToSplit.Start)
+			ipInRange := utils.Add(rangeToSplit.Start, uint32(rand.Intn(int(size))))
+			peerToGiveToIndex := rand.Intn(numPeers)
+			peerToGiveTo := peers[peerToGiveToIndex]
+			//fmt.Printf("%s: Granting [%v, %v) to %s\n", ring.Peername, ipInRange, rangeToSplit.End, peerToGiveTo)
+			ring.GrantRangeToHost(ipInRange, rangeToSplit.End, peerToGiveTo)
+
+			// Now 'gossip' this to a random host (note, not the same host as above)
+			otherRing := rings[rand.Intn(numPeers)]
+			wt.AssertSuccess(t, otherRing.merge(*ring))
+			continue
+		}
+
+		// No rings think they own anything (as gossip might be behind)
+		// We're going to pick a random host (which has entries) and gossip
+		// it to a random host (which may or may not have entries).
+		var ringsWithEntries []*Ring
+		for _, ring := range rings {
+			if len(ring.Entries) > 0 {
+				ringsWithEntries = append(ringsWithEntries, ring)
+			}
+		}
+		ring1 := ringsWithEntries[rand.Intn(len(ringsWithEntries))]
+		ring2 := rings[rand.Intn(numPeers)]
+		//fmt.Printf("%s: 'Gossiping' to %s\n", ring1.Peername, ring2.Peername)
+		wt.AssertSuccess(t, ring2.merge(*ring1))
+	}
 }

@@ -119,8 +119,12 @@ func (r *Ring) checkInvariants() error {
 	return nil
 }
 
-func (r *Ring) insertAt(i int, e entry) {
+func (r *Ring) insert(e entry) {
 	r.assertInvariants()
+
+	i := sort.Search(len(r.Entries), func(j int) bool {
+		return r.Entries[j].Token >= e.Token
+	})
 
 	if i < len(r.Entries) && r.Entries[i].Token == e.Token {
 		panic("Trying to insert an existing token!")
@@ -226,7 +230,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		previous.Free = r.distance(previous.Token, start)
 		previous.Version++
 
-		r.insertAt(i, entry{Token: start, Peer: peer, Free: newFree})
+		r.insert(entry{Token: start, Peer: peer, Free: newFree})
 	}
 
 	r.assertInvariants()
@@ -244,9 +248,12 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	k := i + 1
 	nextEntry := r.entry(k)
 
-	// End needs wrapping
-	end = r.Start + ((end - r.Start) % (r.End - r.Start))
+	// There is a special case when end == ring.End
+	if end == r.End {
+		end = r.Start
+	}
 
+	// Case i
 	if nextEntry.Token == end {
 		// That was easy
 		return
@@ -255,7 +262,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	// Case ii (case iii should never happen)
 	utils.Assert(r.between(end, i, k), "End spans another token")
 	distance := r.distance(end, r.entry(k).Token)
-	r.insertAt(k, entry{Token: end, Peer: r.Peername, Free: distance})
+	r.insert(entry{Token: end, Peer: r.Peername, Free: distance})
 	r.assertInvariants()
 }
 
@@ -426,9 +433,9 @@ func (r *Ring) ClaimItAll() {
 	// We reserve the first and last address with a special range; this ensures
 	// they are never given out by anyone
 	// Per RFC1122, don't allocate the first (network) and last (broadcast) addresses
-	r.insertAt(0, entry{Token: r.Start + 1, Peer: r.Peername,
+	r.insert(entry{Token: r.Start + 1, Peer: r.Peername,
 		Free: r.End - r.Start - 2})
-	r.insertAt(1, entry{Token: r.End - 1, Peer: router.UnknownPeerName})
+	r.insert(entry{Token: r.End - 1, Peer: router.UnknownPeerName})
 
 	r.assertInvariants()
 }
