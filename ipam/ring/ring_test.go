@@ -1,13 +1,13 @@
 package ring
 
 import (
-	"bytes"
 	"fmt"
 	"math/rand"
 	"net"
 	"sort"
 	"testing"
 
+	"github.com/zettio/weave/common"
 	"github.com/zettio/weave/ipam/utils"
 	"github.com/zettio/weave/router"
 	wt "github.com/zettio/weave/testing"
@@ -616,67 +616,9 @@ func TestFuzzRing(t *testing.T) {
 }
 
 func TestFuzzRingHard(t *testing.T) {
+	//common.InitDefaultLogging(true)
 	var (
 		numPeers   = 100
-		iterations = 2000
-	)
-
-	peers := make([]router.PeerName, numPeers)
-	rings := make([]*Ring, numPeers)
-	for i := 0; i < numPeers; i++ {
-		peer, _ := router.PeerNameFromString(fmt.Sprintf("%02d:00:00:00:00:00", i))
-		peers[i] = peer
-		rings[i] = New(ipStart, ipEnd, peer)
-	}
-
-	rings[0].ClaimItAll()
-
-	for i := 0; i < iterations; i++ {
-		var ringsWithRanges []*Ring
-		for _, ring := range rings {
-			if len(ring.OwnedRanges()) > 0 {
-				ringsWithRanges = append(ringsWithRanges, ring)
-			}
-		}
-
-		if len(ringsWithRanges) > 0 {
-			// Produce a random split in a random owned range, given to a random peer
-			ring := ringsWithRanges[rand.Intn(len(ringsWithRanges))]
-			ownedRanges := ring.OwnedRanges()
-			rangeToSplit := ownedRanges[rand.Intn(len(ownedRanges))]
-			size := utils.Subtract(rangeToSplit.End, rangeToSplit.Start)
-			ipInRange := utils.Add(rangeToSplit.Start, uint32(rand.Intn(int(size))))
-			peerToGiveToIndex := rand.Intn(numPeers)
-			peerToGiveTo := peers[peerToGiveToIndex]
-			//fmt.Printf("%s: Granting [%v, %v) to %s\n", ring.Peername, ipInRange, rangeToSplit.End, peerToGiveTo)
-			ring.GrantRangeToHost(ipInRange, rangeToSplit.End, peerToGiveTo)
-
-			// Now 'gossip' this to a random host (note, not the same host as above)
-			otherRing := rings[rand.Intn(numPeers)]
-			wt.AssertSuccess(t, otherRing.merge(*ring))
-			continue
-		}
-
-		// No rings think they own anything (as gossip might be behind)
-		// We're going to pick a random host (which has entries) and gossip
-		// it to a random host (which may or may not have entries).
-		var ringsWithEntries []*Ring
-		for _, ring := range rings {
-			if len(ring.Entries) > 0 {
-				ringsWithEntries = append(ringsWithEntries, ring)
-			}
-		}
-		ring1 := ringsWithEntries[rand.Intn(len(ringsWithEntries))]
-		ring2 := rings[rand.Intn(numPeers)]
-		//fmt.Printf("%s: 'Gossiping' to %s\n", ring1.Peername, ring2.Peername)
-		wt.AssertSuccess(t, ring2.merge(*ring1))
-	}
-}
-
-// As above, but with peer removals
-func TestFuzzRingHarder(t *testing.T) {
-	var (
-		numPeers   = 2
 		iterations = 3000
 		peers      []router.PeerName
 		rings      []*Ring
@@ -684,8 +626,8 @@ func TestFuzzRingHarder(t *testing.T) {
 	)
 
 	addPeer := func() {
-		peer, _ := router.PeerNameFromString(fmt.Sprintf("%02d:00:00:00:00:00", nextPeerID))
-		fmt.Printf("%s: Adding peer\n", peer)
+		peer, _ := router.PeerNameFromString(fmt.Sprintf("%02d:%02d:00:00:00:00", nextPeerID/10, nextPeerID%10))
+		common.Debug.Printf("%s: Adding peer", peer)
 		nextPeerID++
 		peers = append(peers, peer)
 		rings = append(rings, New(ipStart, ipEnd, peer))
@@ -710,6 +652,11 @@ func TestFuzzRingHarder(t *testing.T) {
 		return peerIndex, peers[peerIndex], rings[peerIndex]
 	}
 
+	// Keep a map of index -> ranges, as these are a little expensive to
+	// calculate for every ring on every iteration.
+	var theRanges = make(map[int][]Range)
+	theRanges[0] = rings[0].OwnedRanges()
+
 	addOrRmPeer := func() {
 		if len(peers) < numPeers {
 			addPeer()
@@ -717,80 +664,85 @@ func TestFuzzRingHarder(t *testing.T) {
 		}
 
 		peerIndex, peername, _ := randomPeer(-1)
+		// Remove peer from our state
+		peers = append(peers[:peerIndex], peers[peerIndex+1:]...)
+		rings = append(rings[:peerIndex], rings[peerIndex+1:]...)
+		theRanges = make(map[int][]Range)
+
 		// Tombstone this peer on another peer, but not this one
 		_, otherPeername, otherRing := randomPeer(peerIndex)
 
-		fmt.Printf("%s: Tombstoning peer %s\n", otherPeername, peername)
+		// We need to be in a ~converged ring to tombstone
+		for _, ring := range rings {
+			wt.AssertSuccess(t, otherRing.merge(*ring))
+		}
 
+		common.Debug.Printf("%s: Tombstoning peer %s", otherPeername, peername)
 		otherRing.TombstonePeer(peername, 100)
-		peers = append(peers[:peerIndex], peers[peerIndex+1:]...)
-		rings = append(rings[:peerIndex], rings[peerIndex+1:]...)
+
+		// And now tell everyone about the tombstone - tombstones are
+		// not partition safe
+		for i, ring := range rings {
+			wt.AssertSuccess(t, ring.merge(*otherRing))
+			theRanges[i] = ring.OwnedRanges()
+		}
 	}
 
 	doGrantOrGossip := func() {
-		var ringsWithRanges []*Ring
-		for _, ring := range rings {
-			if len(ring.OwnedRanges()) > 0 {
-				ringsWithRanges = append(ringsWithRanges, ring)
+		var ringsWithRanges = make([]int, 0, len(rings))
+		for index, ranges := range theRanges {
+			if len(ranges) > 0 {
+				ringsWithRanges = append(ringsWithRanges, index)
 			}
 		}
 
 		if len(ringsWithRanges) > 0 {
 			// Produce a random split in a random owned range, given to a random peer
-			ring := ringsWithRanges[rand.Intn(len(ringsWithRanges))]
-			ownedRanges := ring.OwnedRanges()
+			indexWithRanges := ringsWithRanges[rand.Intn(len(ringsWithRanges))]
+			ownedRanges := theRanges[indexWithRanges]
+			ring := rings[indexWithRanges]
+
 			rangeToSplit := ownedRanges[rand.Intn(len(ownedRanges))]
 			size := utils.Subtract(rangeToSplit.End, rangeToSplit.Start)
 			ipInRange := utils.Add(rangeToSplit.Start, uint32(rand.Intn(int(size))))
 			_, peerToGiveTo, _ := randomPeer(-1)
-			fmt.Printf("%s: Granting [%v, %v) to %s\n", ring.Peername, ipInRange, rangeToSplit.End, peerToGiveTo)
+			common.Debug.Printf("%s: Granting [%v, %v) to %s", ring.Peername, ipInRange, rangeToSplit.End, peerToGiveTo)
 			ring.GrantRangeToHost(ipInRange, rangeToSplit.End, peerToGiveTo)
 
-			// Now 'gossip' this to a random host (note, not the same host as above)
-			_, _, otherRing := randomPeer(-1)
-			fmt.Printf("%s: 'Gossiping' to %s\n", ring.Peername, otherRing.Peername)
-			//fmt.Printf("%s:\n%s\n", ring.Peername, ring.String())
-			//fmt.Printf("%s:\n%s\n", otherRing.Peername, otherRing.String())
+			// Now 'gossip' this to a random host (note, note could be same host as above)
+			otherIndex, _, otherRing := randomPeer(-1)
+			common.Debug.Printf("%s: 'Gossiping' to %s", ring.Peername, otherRing.Peername)
 			wt.AssertSuccess(t, otherRing.merge(*ring))
+
+			theRanges[indexWithRanges] = ring.OwnedRanges()
+			theRanges[otherIndex] = otherRing.OwnedRanges()
 			return
 		}
 
 		// No rings think they own anything (as gossip might be behind)
 		// We're going to pick a random host (which has entries) and gossip
 		// it to a random host (which may or may not have entries).
-		var ringsWithEntries []*Ring
+		var ringsWithEntries = make([]*Ring, 0, len(rings))
 		for _, ring := range rings {
 			if len(ring.Entries) > 0 {
 				ringsWithEntries = append(ringsWithEntries, ring)
 			}
 		}
 		ring1 := ringsWithEntries[rand.Intn(len(ringsWithEntries))]
-		_, _, ring2 := randomPeer(-1)
-		fmt.Printf("%s: 'Gossiping' to %s\n", ring1.Peername, ring2.Peername)
+		ring2index, _, ring2 := randomPeer(-1)
+		common.Debug.Printf("%s: 'Gossiping' to %s", ring1.Peername, ring2.Peername)
 		wt.AssertSuccess(t, ring2.merge(*ring1))
+		theRanges[ring2index] = ring2.OwnedRanges()
 	}
 
 	for i := 0; i < iterations; i++ {
-		// about 1 in 100 times, tombstone or add host
-		n := rand.Intn(100)
+		// about 1 in 10 times, tombstone or add host
+		n := rand.Intn(10)
 		switch {
-		case n == 0:
+		case n < 1:
 			addOrRmPeer()
 		default:
 			doGrantOrGossip()
 		}
 	}
-}
-
-func (es entries) String() string {
-	var buffer bytes.Buffer
-	fmt.Fprintf(&buffer, "[")
-	for i, entry := range es {
-		fmt.Fprintf(&buffer, "%+v", *entry)
-		if i+1 < len(es) {
-			fmt.Fprintf(&buffer, " ")
-		}
-	}
-	fmt.Fprintf(&buffer, "]")
-	return buffer.String()
 }
