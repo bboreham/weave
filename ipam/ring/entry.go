@@ -91,7 +91,7 @@ func (es entries) between(token uint32, i, j int) bool {
 
 // filteredEntries returns the entires minus tombstones
 func (es entries) filteredEntries() entries {
-	var result entries
+	var result = make([]*entry, 0, len(es))
 	for _, entry := range es {
 		if entry.Tombstone == 0 {
 			result = append(result, entry)
