@@ -209,6 +209,24 @@ func (alloc *Allocator) AmendSpace(newSize int) {
 	//alloc.ourSpaceSet.version++
 }
 
+func TestTombstoneSimple(t *testing.T) {
+	common.InitDefaultLogging(true)
+	const (
+		cidr = "10.0.1.7/22"
+	)
+	allocs, _ := makeNetworkOfAllocators(2, cidr)
+	alloc1 := allocs[0]
+	alloc2 := allocs[1] // This will be 'master' and get the first range
+
+	addr := alloc1.GetFor("foo", nil)
+	println("Got addr", addr)
+
+	addr = alloc2.GetFor("bar", nil)
+	println("Got addr", addr)
+
+	wt.AssertSuccess(t, alloc2.TombstonePeer(alloc1.ourName))
+}
+
 func TestFakeRouterSimple(t *testing.T) {
 	common.InitDefaultLogging(true)
 	const (
