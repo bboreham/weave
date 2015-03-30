@@ -280,7 +280,7 @@ func TestFakeRouterSimple(t *testing.T) {
 	println("Got addr", addr)
 }
 
-func BenchmarkAllocator(b *testing.B) {
+func TestAllocatorFuzz(t *testing.T) {
 	//common.InitDefaultLogging(true)
 	const (
 		firstpass    = 1000
@@ -331,14 +331,14 @@ func BenchmarkAllocator(b *testing.B) {
 
 		allocIndex := rand.Int31n(nodes)
 		alloc := allocs[allocIndex]
-		common.Info.Printf("GetFor: asking allocator %d", allocIndex)
+		//common.Info.Printf("GetFor: asking allocator %d", allocIndex)
 		addr := alloc.GetFor(name, nil)
 
 		if addr == nil {
 			panic(fmt.Sprintf("Could not allocate addr"))
 		}
 
-		common.Info.Printf("GetFor: got address %s for name %s", addr, name)
+		//common.Info.Printf("GetFor: got address %s for name %s", addr, name)
 		addrStr := addr.String()
 
 		stateLock.Lock()
@@ -371,7 +371,7 @@ func BenchmarkAllocator(b *testing.B) {
 		stateLock.Unlock()
 
 		alloc := allocs[res.alloc]
-		common.Info.Printf("Freeing %s on allocator %d", addr, res.alloc)
+		//common.Info.Printf("Freeing %s on allocator %d", addr, res.alloc)
 
 		err := alloc.Free(res.name, net.ParseIP(addr))
 		if err != nil {
@@ -389,7 +389,7 @@ func BenchmarkAllocator(b *testing.B) {
 		stateLock.Unlock()
 		alloc := allocs[res.alloc]
 
-		common.Info.Printf("Asking for %s on allocator %d again", addr, res.alloc)
+		//common.Info.Printf("Asking for %s on allocator %d again", addr, res.alloc)
 
 		newAddr := alloc.GetFor(res.name, nil)
 		if !newAddr.Equal(net.ParseIP(addr)) {
