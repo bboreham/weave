@@ -133,13 +133,13 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 
 	// Look for the right-most entry, less than or equal to start
 	filteredEntries := r.Entries.filteredEntries()
-	preceedingNode := sort.Search(len(filteredEntries), func(j int) bool {
+	preceedingEntry := sort.Search(len(filteredEntries), func(j int) bool {
 		return filteredEntries[j].Token > start
 	})
-	preceedingNode--
+	preceedingEntry--
 
 	utils.Assert(len(filteredEntries) > 0, "Here be dragons")
-	utils.Assert(filteredEntries.entry(preceedingNode).Peer == r.Peername, "Trying to grant in a range I don't own")
+	utils.Assert(filteredEntries.entry(preceedingEntry).Peer == r.Peername, "Trying to grant in a range I don't own")
 
 	// At the end, the check is a little trickier.  There is never an entry with
 	// a token of r.End, as the end of the ring is exclusive.  If we've asked to end == r.End,
@@ -152,8 +152,8 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 
 	// Either the next non-tombstone token is the end token, or the end token is between
 	// the current and the next.
-	utils.Assert(filteredEntries.between(expectedNextToken, preceedingNode, preceedingNode+1) ||
-		filteredEntries.entry(preceedingNode+1).Token == expectedNextToken,
+	utils.Assert(filteredEntries.between(expectedNextToken, preceedingEntry, preceedingEntry+1) ||
+		filteredEntries.entry(preceedingEntry+1).Token == expectedNextToken,
 		"Trying to grant spanning a token")
 
 	// ----------------- End of Checks -----------------
@@ -167,7 +167,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	// to change the owner and update version
 	// Note we don't need to check ownership; we did that above.
 	if i < len(r.Entries) && r.Entries[i].Token == start {
-		entry := r.Entries[i]
+		entry := r.Entries.entry(i)
 		entry.Peer = peer
 		entry.Tombstone = 0
 		entry.Version++
@@ -176,9 +176,20 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		// Otherwise, these isn't a token here, insert a new one.
 		// Checks have already ensured we own this range.
 		r.Entries.insert(entry{Token: start, Peer: peer, Free: r.distance(start, end)})
+	}
 
-		// Reset free on previous (non-tombstone) token
-		previous := filteredEntries.entry(preceedingNode)
+	// Need to reset free space on previous (non-tombstone) entry.  We can do
+	// this in two cases - either we resurrected a tombstone entry (first branch
+	// of above if) or we added a new entry (else in above if).  In both cases we
+	// are guaranteed to we own preceedingEntry.  Note in the above if, the first
+	// branch also covers the case where we are giving up a token we own (as opposed to
+	// resurrecting a entry), in which case we are not guaranteed to own the previous entry.
+	// But in that case preceedingEntry is the entry we just updated, so its harmless.
+	// preceedingEntry points to the first non-tombstone entry less than or equal to us,
+	// as that view doesn't include tombstones.
+	previous := filteredEntries.entry(preceedingEntry)
+	if previous.Token != start {
+		utils.Assert(previous.Peer == r.Peername, "I don't own you!")
 		previous.Free = r.distance(previous.Token, start)
 		previous.Version++
 	}
@@ -200,9 +211,13 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	//        => this is an error, we'll be splitting someone else's ranges.
 	//           We checked at the top for this case.
 
-	// Now looks for the next non-tombstone entry
-	k := i + 1
+	// Now looks for the the entry with the end token
 	endEntry, found := r.Entries.get(expectedNextToken)
+
+	// And the next live token after; This might not be the next token
+	// after, it might be the same, but that will just under-estimate free
+	// space, which will get corrected by calls to ReportFree.
+	nextLiveEntry := filteredEntries.entry(preceedingEntry + 1)
 
 	switch {
 	// Case i(a) - there is already token at the end, and its not a tombstone
@@ -215,14 +230,14 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		endEntry.Tombstone = 0
 		endEntry.Version++
 		// TODO this could underestimate, as next entry might be a tombstone
-		endEntry.Free = r.distance(expectedNextToken, r.Entries.entry(k+1).Token)
+		endEntry.Free = r.distance(expectedNextToken, nextLiveEntry.Token)
 		return
 
 	// Case ii & iii
 	default:
 		utils.Assert(!found, "WTF")
 		// This could underestimate, as entry token could be a tombstone
-		distance := r.distance(expectedNextToken, r.Entries.entry(k).Token)
+		distance := r.distance(expectedNextToken, nextLiveEntry.Token)
 		r.Entries.insert(entry{Token: expectedNextToken, Peer: r.Peername, Free: distance})
 	}
 }

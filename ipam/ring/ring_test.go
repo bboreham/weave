@@ -676,8 +676,8 @@ func TestFuzzRingHard(t *testing.T) {
 // As above, but with peer removals
 func TestFuzzRingHarder(t *testing.T) {
 	var (
-		numPeers   = 10
-		iterations = 2000
+		numPeers   = 2
+		iterations = 3000
 		peers      []router.PeerName
 		rings      []*Ring
 		nextPeerID = 0
@@ -720,7 +720,7 @@ func TestFuzzRingHarder(t *testing.T) {
 		// Tombstone this peer on another peer, but not this one
 		_, otherPeername, otherRing := randomPeer(peerIndex)
 
-		fmt.Printf("%s: Tombstoning peer %s\n", peername, otherPeername)
+		fmt.Printf("%s: Tombstoning peer %s\n", otherPeername, peername)
 
 		otherRing.TombstonePeer(peername, 100)
 		peers = append(peers[:peerIndex], peers[peerIndex+1:]...)
@@ -748,6 +748,9 @@ func TestFuzzRingHarder(t *testing.T) {
 
 			// Now 'gossip' this to a random host (note, not the same host as above)
 			_, _, otherRing := randomPeer(-1)
+			fmt.Printf("%s: 'Gossiping' to %s\n", ring.Peername, otherRing.Peername)
+			//fmt.Printf("%s:\n%s\n", ring.Peername, ring.String())
+			//fmt.Printf("%s:\n%s\n", otherRing.Peername, otherRing.String())
 			wt.AssertSuccess(t, otherRing.merge(*ring))
 			return
 		}
