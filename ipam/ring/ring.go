@@ -48,7 +48,6 @@ var (
 	ErrTooMuchFreeSpace        = errors.New("Entry reporting too much free space!")
 	ErrCannotTombstoneYourself = errors.New("Cannot tombstone yourself")
 	ErrInvalidTimeout          = errors.New("dt must be greater than 0")
-	ErrCannotTombstoneLastPeer = errors.New("Cannot tombstone last peer")
 )
 
 func (r *Ring) checkInvariants() error {
@@ -370,10 +369,10 @@ func (r *Ring) GossipState() []byte {
 }
 
 // Empty returns true if the ring has no entries
-// NB this test includes Tombstones.
-// TODO reconsider what happens if you delete every node from the ring?
+// Function does not consider tombstones, so result will
+// be true if you delete every node from the ring.
 func (r *Ring) Empty() bool {
-	return len(r.Entries) == 0
+	return len(r.Entries.filteredEntries()) == 0
 }
 
 // Range is the return type for OwnedRanges.
@@ -431,14 +430,29 @@ func (r *Ring) OwnedRanges() []Range {
 
 // ClaimItAll claims the entire ring for this peer.  Only works for empty rings.
 func (r *Ring) ClaimItAll() {
-	utils.Assert(len(r.Entries) == 0, "Cannot bootstrap ring with entries in it!")
+	utils.Assert(r.Empty(), "Cannot bootstrap ring with entries in it!")
 
 	// We reserve the first and last address with a special range; this ensures
 	// they are never given out by anyone
 	// Per RFC1122, don't allocate the first (network) and last (broadcast) addresses
-	r.Entries.insert(entry{Token: r.Start + 1, Peer: r.Peername,
-		Free: r.End - r.Start - 2})
-	r.Entries.insert(entry{Token: r.End - 1, Peer: router.UnknownPeerName})
+	if e, found := r.Entries.get(r.Start + 1); found {
+		e.Peer = r.Peername
+		e.Tombstone = 0
+		e.Free = r.distance(r.Start+1, r.End-1)
+		e.Version++
+	} else {
+		r.Entries.insert(entry{Token: r.Start + 1, Peer: r.Peername,
+			Free: r.End - r.Start - 2})
+	}
+
+	if e, found := r.Entries.get(r.End - 1); found {
+		e.Peer = router.UnknownPeerName
+		e.Tombstone = 0
+		e.Free = 0
+		e.Version++
+	} else {
+		r.Entries.insert(entry{Token: r.End - 1, Peer: router.UnknownPeerName})
+	}
 
 	r.assertInvariants()
 }
@@ -530,15 +544,6 @@ func (r *Ring) TombstonePeer(peer router.PeerName, dt time.Duration) error {
 	}
 	if dt <= 0 {
 		return ErrInvalidTimeout
-	}
-	foundAnotherNonTombstonePeer := false
-	for _, entry := range r.Entries.filteredEntries() {
-		if entry.Peer != peer {
-			foundAnotherNonTombstonePeer = true
-		}
-	}
-	if !foundAnotherNonTombstonePeer {
-		return ErrCannotTombstoneLastPeer
 	}
 
 	absTimeout := time.Now().Unix() + int64(dt)
