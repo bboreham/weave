@@ -234,22 +234,35 @@ func (alloc *Allocator) AmendSpace(newSize int) {
 	//alloc.ourSpaceSet.version++
 }
 
-func TestTombstoneSimple(t *testing.T) {
+// Test we can create three nodes, create ips on two of them, remove those
+// two (and therefor all the tokens on the ring) and still continue
+func TestTombstoneEveryone(t *testing.T) {
 	common.InitDefaultLogging(true)
 	const (
 		cidr = "10.0.1.7/22"
 	)
-	allocs, _ := makeNetworkOfAllocators(2, cidr)
+	allocs, router := makeNetworkOfAllocators(3, cidr)
 	alloc1 := allocs[0]
-	alloc2 := allocs[1] // This will be 'master' and get the first range
+	alloc2 := allocs[1]
+	alloc3 := allocs[2] // This will be 'master' and get the first range
 
-	addr := alloc1.GetFor("foo", nil)
-	println("Got addr", addr)
+	addr := alloc2.GetFor("foo", nil)
+	wt.AssertTrue(t, addr != nil, "Failed to get address")
 
-	addr = alloc2.GetFor("bar", nil)
-	println("Got addr", addr)
+	addr = alloc3.GetFor("bar", nil)
+	wt.AssertTrue(t, addr != nil, "Failed to get address")
 
-	wt.AssertSuccess(t, alloc2.TombstonePeer(alloc1.ourName))
+	router.removePeer(alloc2.ourName)
+	router.removePeer(alloc3.ourName)
+	alloc2.Stop()
+	alloc3.Stop()
+	wt.AssertSuccess(t, alloc1.TombstonePeer(alloc2.ourName))
+	wt.AssertSuccess(t, alloc1.TombstonePeer(alloc3.ourName))
+
+	wt.AssertTrue(t, alloc1.ring.Empty(), "Ring not empy!")
+
+	addr = alloc1.GetFor("foo", nil)
+	wt.AssertTrue(t, addr != nil, "Failed to get address")
 }
 
 func TestFakeRouterSimple(t *testing.T) {

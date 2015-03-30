@@ -211,6 +211,7 @@ type gossipMessage struct {
 	isUnicast bool
 	sender    *router.PeerName
 	buf       []byte
+	exitChan  chan bool
 }
 
 type TestGossipRouter struct {
@@ -221,7 +222,7 @@ type TestGossipRouter struct {
 func (grouter *TestGossipRouter) GossipBroadcast(buf []byte) error {
 	for _, gossipChan := range grouter.gossipChans {
 		select {
-		case gossipChan <- gossipMessage{false, nil, buf}:
+		case gossipChan <- gossipMessage{buf: buf}:
 		default: // drop the message if we cannot send it
 		}
 	}
@@ -238,6 +239,14 @@ func (grouter *TestGossipRouter) LeaderElect() router.PeerName {
 	return highest
 }
 
+func (grouter *TestGossipRouter) removePeer(peer router.PeerName) {
+	gossipChan := grouter.gossipChans[peer]
+	resultChan := make(chan bool)
+	gossipChan <- gossipMessage{exitChan: resultChan}
+	<-resultChan
+	delete(grouter.gossipChans, peer)
+}
+
 type TestGossipRouterClient struct {
 	router *TestGossipRouter
 	sender router.PeerName
@@ -251,6 +260,11 @@ func (grouter *TestGossipRouter) connect(sender router.PeerName, gossiper router
 		for {
 			select {
 			case message := <-gossipChan:
+				if message.exitChan != nil {
+					message.exitChan <- true
+					return
+				}
+
 				if rand.Float32() > (1.0 - grouter.loss) {
 					continue
 				}
@@ -282,7 +296,7 @@ func (client TestGossipRouterClient) LeaderElect() router.PeerName {
 
 func (client TestGossipRouterClient) GossipUnicast(dstPeerName router.PeerName, buf []byte) error {
 	select {
-	case client.router.gossipChans[dstPeerName] <- gossipMessage{true, &client.sender, buf}:
+	case client.router.gossipChans[dstPeerName] <- gossipMessage{isUnicast: true, sender: &client.sender, buf: buf}:
 	default: // drop the message if we cannot send it
 		common.Error.Printf("Dropping message")
 	}
