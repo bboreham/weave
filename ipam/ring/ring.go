@@ -16,6 +16,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/zettio/weave/common"
 	"github.com/zettio/weave/ipam/utils"
 	"github.com/zettio/weave/router"
 )
@@ -53,12 +54,17 @@ func (r *Ring) checkInvariants() error {
 	}
 
 	// Check no token appears twice
-	tokens := make(map[uint32]bool)
+	// We know its sorted...
+	var lastToken *uint32
 	for _, entry := range r.Entries {
-		if _, ok := tokens[entry.Token]; ok {
+		if lastToken == nil {
+			lastToken = &entry.Token
+			continue
+		}
+		if *lastToken == entry.Token {
 			return ErrTokenRepeated
 		}
-		tokens[entry.Token] = true
+		lastToken = &entry.Token
 	}
 
 	if len(r.Entries) == 0 {
@@ -294,6 +300,7 @@ func (r *Ring) merge(gossip Ring) error {
 			switch {
 			case mine.Version >= theirs.Version:
 				if mine.Version == theirs.Version && !mine.Equal(theirs) {
+					common.Debug.Printf("Error merging entries at %s - %v != %v\n", utils.IntIP4(mine.Token), mine, theirs)
 					return ErrInvalidEntry
 				}
 				addToResult(*mine)
@@ -381,7 +388,6 @@ func (r *Ring) OwnedRanges() []Range {
 		entries = r.Entries.filteredEntries() // We can ignore tombstones in this method
 	)
 	r.assertInvariants()
-	defer r.assertInvariants()
 
 	// Finally iterate through entries again
 	// filling in result as we go.
