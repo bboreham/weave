@@ -432,26 +432,14 @@ func (r *Ring) OwnedRanges() []Range {
 func (r *Ring) ClaimItAll() {
 	utils.Assert(r.Empty(), "Cannot bootstrap ring with entries in it!")
 
-	// We reserve the first and last address with a special range; this ensures
-	// they are never given out by anyone
-	// Per RFC1122, don't allocate the first (network) and last (broadcast) addresses
-	if e, found := r.Entries.get(r.Start + 1); found {
+	if e, found := r.Entries.get(r.Start); found {
 		e.Peer = r.Peername
 		e.Tombstone = 0
-		e.Free = r.distance(r.Start+1, r.End-1)
+		e.Free = r.distance(r.Start, r.End)
 		e.Version++
 	} else {
-		r.Entries.insert(entry{Token: r.Start + 1, Peer: r.Peername,
-			Free: r.End - r.Start - 2})
-	}
-
-	if e, found := r.Entries.get(r.End - 1); found {
-		e.Peer = router.UnknownPeerName
-		e.Tombstone = 0
-		e.Free = 0
-		e.Version++
-	} else {
-		r.Entries.insert(entry{Token: r.End - 1, Peer: router.UnknownPeerName})
+		r.Entries.insert(entry{Token: r.Start, Peer: r.Peername,
+			Free: r.distance(r.Start, r.End)})
 	}
 
 	r.assertInvariants()
