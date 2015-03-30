@@ -1,6 +1,7 @@
 package ipam
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/zettio/weave/common"
+	"github.com/zettio/weave/router"
 )
 
 // Parse a URL of the form /xxx/<identifier>
@@ -72,5 +74,40 @@ func (alloc *Allocator) HandleHTTP(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("/tombstone-self", func(w http.ResponseWriter, r *http.Request) {
 		alloc.OnShutdown()
+	})
+	mux.HandleFunc("/peer", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			peers := alloc.ListPeers()
+			json.NewEncoder(w).Encode(peers)
+		default:
+			http.Error(w, "Verb not handled", http.StatusBadRequest)
+		}
+	})
+	mux.HandleFunc("/peer/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "DELETE": // opposite of PUT for one specific address or all addresses
+			ident, err := parseURL(r.URL.Path)
+			if err != nil {
+				httpErrorAndLog(common.Warning, w, "Invalid request", http.StatusBadRequest, err.Error())
+				return
+			}
+
+			peername, err := router.PeerNameFromString(ident)
+			if err != nil {
+				httpErrorAndLog(common.Warning, w, "Invalid peername", http.StatusBadRequest, err.Error())
+				return
+			}
+
+			if err := alloc.TombstonePeer(peername); err != nil {
+				httpErrorAndLog(common.Warning, w, "Cannot remove peer", http.StatusBadRequest,
+					err.Error())
+				return
+			}
+
+			w.WriteHeader(204)
+		default:
+			http.Error(w, "Verb not handled", http.StatusBadRequest)
+		}
 	})
 }

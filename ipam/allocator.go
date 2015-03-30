@@ -271,6 +271,19 @@ func (alloc *Allocator) tombstonePeer(peer router.PeerName) error {
 	return err
 }
 
+func (alloc *Allocator) listPeers() []router.PeerName {
+	peers := make(map[router.PeerName]bool)
+	for _, entry := range alloc.ring.Entries {
+		peers[entry.Peer] = true
+	}
+
+	result := make([]router.PeerName, 0, len(peers))
+	for peer := range peers {
+		result = append(result, peer)
+	}
+	return result
+}
+
 func (alloc *Allocator) errorln(args ...interface{}) {
 	lg.Error.Println(append([]interface{}{fmt.Sprintf("[allocator %s]:", alloc.ourName)}, args...)...)
 }
