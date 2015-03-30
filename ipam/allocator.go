@@ -83,7 +83,7 @@ func NewAllocator(ourName router.PeerName, universeCIDR string) (*Allocator, err
 		universeStart: universeNet.IP,
 		universeSize:  universeSize,
 		universeLen:   ones,
-		ring:          ring.New(universeNet.IP, utils.Add(universeNet.IP, universeSize), ourName),
+		ring:          ring.New(utils.Add(universeNet.IP, 1), utils.Add(universeNet.IP, universeSize-1), ourName),
 		owned:         make(map[string][]net.IP),
 	}
 	return alloc, nil
