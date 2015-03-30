@@ -62,18 +62,17 @@ func (s *Set) AddSpace(newspace Space) {
 	s.spaces[i] = &newspace               // put in new element
 }
 
-// Exists returns true if space described by (start, size) exists
-// in this set.
-func (s *Set) Exists(start net.IP, size uint32) bool {
+// Get returns the space found at start.
+func (s *Set) Get(start net.IP) (*Space, bool) {
 	// TODO consider keeping s.spaces sorted to make this
 	// quicker.
 	for _, space := range s.spaces {
-		if space.Start.Equal(start) && space.Size == size {
-			return true
+		if space.Start.Equal(start) {
+			return space, true
 		}
 	}
 
-	return false
+	return nil, false
 }
 
 // NumFreeAddresses returns the total free address across

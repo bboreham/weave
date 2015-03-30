@@ -223,9 +223,16 @@ func (alloc *Allocator) considerNewSpaces() {
 	ownedRanges := alloc.ring.OwnedRanges()
 	for _, r := range ownedRanges {
 		size := uint32(utils.Subtract(r.End, r.Start))
-		if !alloc.spaceSet.Exists(r.Start, size) {
+		s, exists := alloc.spaceSet.Get(r.Start)
+		if !exists {
 			alloc.debugf("Found new space [%s, %s)", r.Start, r.End)
 			alloc.spaceSet.AddSpace(space.Space{Start: r.Start, Size: size})
+			continue
+		}
+
+		if s.Size < size {
+			alloc.debugf("Growing space starting at %s to %d", s.Start, size)
+			s.Grow(size)
 		}
 	}
 }

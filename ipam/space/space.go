@@ -174,6 +174,12 @@ func (space *Space) BiggestFreeChunk() (net.IP, uint32) {
 	return chunkStart, chunkSize
 }
 
+// Grow increases the size of this space to size.
+func (space *Space) Grow(size uint32) {
+	utils.Assert(space.Size < size, "Cannot shrink a space!")
+	space.Size = size
+}
+
 // NumFreeAddresses returns the total number of free addressed in
 // this space.
 func (space *Space) NumFreeAddresses() uint32 {
