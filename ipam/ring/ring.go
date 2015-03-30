@@ -37,15 +37,18 @@ func (r *Ring) assertInvariants() {
 
 // Errors returned by merge
 var (
-	ErrNotSorted        = errors.New("Ring not sorted")
-	ErrTokenRepeated    = errors.New("Token appears twice in ring")
-	ErrTokenOutOfRange  = errors.New("Token is out of range")
-	ErrDifferentSubnets = errors.New("Cannot merge gossip for different subnet!")
-	ErrNewerVersion     = errors.New("Received new version for entry I own!")
-	ErrInvalidEntry     = errors.New("Received invalid state update!")
-	ErrEntryInMyRange   = errors.New("Received new entry in my range!")
-	ErrNoFreeSpace      = errors.New("No free space found!")
-	ErrTooMuchFreeSpace = errors.New("Entry reporting too much free space!")
+	ErrNotSorted               = errors.New("Ring not sorted")
+	ErrTokenRepeated           = errors.New("Token appears twice in ring")
+	ErrTokenOutOfRange         = errors.New("Token is out of range")
+	ErrDifferentSubnets        = errors.New("Cannot merge gossip for different subnet!")
+	ErrNewerVersion            = errors.New("Received new version for entry I own!")
+	ErrInvalidEntry            = errors.New("Received invalid state update!")
+	ErrEntryInMyRange          = errors.New("Received new entry in my range!")
+	ErrNoFreeSpace             = errors.New("No free space found!")
+	ErrTooMuchFreeSpace        = errors.New("Entry reporting too much free space!")
+	ErrCannotTombstoneYourself = errors.New("Cannot tombstone yourself")
+	ErrInvalidTimeout          = errors.New("dt must be greater than 0")
+	ErrCannotTombstoneLastPeer = errors.New("Cannot tombstone last peer")
 )
 
 func (r *Ring) checkInvariants() error {
@@ -521,11 +524,24 @@ func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
 }
 
 // TombstonePeer will mark all entries associated with this peer as tombstones
-func (r *Ring) TombstonePeer(peer router.PeerName, dt int64) {
-	utils.Assert(peer != r.Peername, "Cannot tombstone yourself")
-	utils.Assert(dt > 0, "dt must be greater than 0!")
+func (r *Ring) TombstonePeer(peer router.PeerName, dt time.Duration) error {
+	if peer == r.Peername {
+		return ErrCannotTombstoneYourself
+	}
+	if dt <= 0 {
+		return ErrInvalidTimeout
+	}
+	foundAnotherNonTombstonePeer := false
+	for _, entry := range r.Entries.filteredEntries() {
+		if entry.Peer != peer {
+			foundAnotherNonTombstonePeer = true
+		}
+	}
+	if !foundAnotherNonTombstonePeer {
+		return ErrCannotTombstoneLastPeer
+	}
 
-	absTimeout := time.Now().Unix() + dt
+	absTimeout := time.Now().Unix() + int64(dt)
 
 	for _, entry := range r.Entries {
 		if entry.Peer == peer {
@@ -533,4 +549,6 @@ func (r *Ring) TombstonePeer(peer router.PeerName, dt int64) {
 			entry.Version++
 		}
 	}
+
+	return nil
 }

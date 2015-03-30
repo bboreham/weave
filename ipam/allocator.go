@@ -4,12 +4,18 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net"
+	"time"
+
 	lg "github.com/zettio/weave/common"
 	"github.com/zettio/weave/ipam/ring"
 	"github.com/zettio/weave/ipam/space"
 	"github.com/zettio/weave/ipam/utils"
 	"github.com/zettio/weave/router"
-	"net"
+)
+
+const (
+	tombstoneTimeout = 14 * 24 * time.Hour
 )
 
 const (
@@ -218,7 +224,7 @@ func (alloc *Allocator) considerNewSpaces() {
 	for _, r := range ownedRanges {
 		size := uint32(utils.Subtract(r.End, r.Start))
 		if !alloc.spaceSet.Exists(r.Start, size) {
-			alloc.debugln("Found new space at", r.Start)
+			alloc.debugf("Found new space [%s, %s)", r.Start, r.End)
 			alloc.spaceSet.AddSpace(space.Space{Start: r.Start, Size: size})
 		}
 	}
@@ -250,6 +256,13 @@ func (alloc *Allocator) reportFreeSpace() {
 	}
 }
 
+func (alloc *Allocator) tombstonePeer(peer router.PeerName) error {
+	err := alloc.ring.TombstonePeer(peer, tombstoneTimeout)
+	alloc.considerNewSpaces()
+	alloc.assertInvariants()
+	return err
+}
+
 func (alloc *Allocator) errorln(args ...interface{}) {
 	lg.Error.Println(append([]interface{}{fmt.Sprintf("[allocator %s]:", alloc.ourName)}, args...)...)
 }
@@ -258,4 +271,7 @@ func (alloc *Allocator) infof(fmt string, args ...interface{}) {
 }
 func (alloc *Allocator) debugln(args ...interface{}) {
 	lg.Debug.Println(append([]interface{}{fmt.Sprintf("[allocator %s]:", alloc.ourName)}, args...)...)
+}
+func (alloc *Allocator) debugf(fmt string, args ...interface{}) {
+	lg.Debug.Printf("[allocator %s] "+fmt, append([]interface{}{alloc.ourName}, args...)...)
 }
