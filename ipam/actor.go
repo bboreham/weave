@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/zettio/weave/router"
 	"net"
+	"time"
 )
 
 // Start runs the allocator goroutine
@@ -19,6 +20,9 @@ func (alloc *Allocator) Start() {
 func (alloc *Allocator) GetFor(ident string, cancelChan <-chan bool) net.IP {
 	resultChan := make(chan net.IP, 1) // len 1 so actor can send while cancel is in progress
 	alloc.actionChan <- func() {
+		if alloc.shuttingDown {
+			resultChan <- nil
+		}
 		alloc.electLeaderIfNecessary()
 		if addrs, found := alloc.owned[ident]; found && len(addrs) > 0 {
 			resultChan <- addrs[0] // currently not supporting multiple allocations in the same subnet
@@ -128,6 +132,21 @@ func (alloc *Allocator) TombstonePeer(peer router.PeerName) error {
 		resultChan <- alloc.tombstonePeer(peer)
 	}
 	return <-resultChan
+}
+
+// OnShutdown (Sync)
+func (alloc *Allocator) OnShutdown() {
+	alloc.debugln("OnShutdown")
+	doneChan := make(chan bool)
+	alloc.actionChan <- func() {
+		alloc.shuttingDown = true
+		alloc.ring.TombstonePeer(alloc.ourName, 100)
+		alloc.gossip.GossipBroadcast(alloc.ring.GossipState())
+		alloc.spaceSet.Clear()
+		time.Sleep(100 * time.Millisecond)
+		doneChan <- true
+	}
+	<-doneChan
 }
 
 // ACTOR server

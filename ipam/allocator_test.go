@@ -191,6 +191,31 @@ func TestCancel(t *testing.T) {
 	alloc2.String() // see if it's still operating.
 }
 
+func TestGossipShutdown(t *testing.T) {
+	const (
+		container1 = "abcdef"
+		container2 = "baddf00d"
+		universe   = "10.0.3.0/30"
+		testAddr1  = "10.0.3.1" // first address allocated should be .1 because .0 is network addr
+		spaceSize  = 4
+	)
+
+	alloc := testAllocator(t, "01:00:00:01:00:00", universe)
+	defer alloc.Stop()
+
+	ExpectBroadcastMessage(alloc, nil) // on leader election, broadcasts its state
+	addr1 := alloc.GetFor(container1, nil)
+	wt.AssertEqualString(t, addr1.String(), testAddr1, "address")
+
+	ExpectBroadcastMessage(alloc, nil) // broadcasts state with tombstone
+	alloc.OnShutdown()
+
+	addr2 := alloc.GetFor(container2, nil) // trying to allocate after shutdown should fail
+	wt.AssertEqualString(t, addr2.String(), "<nil>", "address")
+
+	CheckAllExpectedMessagesSent(alloc)
+}
+
 // Placeholders for test methods that touch the internals of Allocator
 
 func (alloc *Allocator) AssertNothingPending(t *testing.T) {

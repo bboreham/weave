@@ -62,6 +62,10 @@ func (s *Set) AddSpace(newspace Space) {
 	s.spaces[i] = &newspace               // put in new element
 }
 
+func (s *Set) Clear() {
+	s.spaces = s.spaces[:0]
+}
+
 // Get returns the space found at start.
 func (s *Set) Get(start net.IP) (*Space, bool) {
 	// TODO consider keeping s.spaces sorted to make this

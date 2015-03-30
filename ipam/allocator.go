@@ -60,6 +60,7 @@ type Allocator struct {
 	owned         map[string][]net.IP // who owns what address, indexed by container-ID
 	pending       []pendingAllocation
 	gossip        router.Gossip
+	shuttingDown  bool
 }
 
 // NewAllocator creats and initialises a new Allocator

@@ -70,4 +70,7 @@ func (alloc *Allocator) HandleHTTP(mux *http.ServeMux) {
 			http.Error(w, "Verb not handled", http.StatusBadRequest)
 		}
 	})
+	mux.HandleFunc("/tombstone-self", func(w http.ResponseWriter, r *http.Request) {
+		alloc.OnShutdown()
+	})
 }
