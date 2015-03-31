@@ -242,6 +242,7 @@ func TestTombstoneEveryone(t *testing.T) {
 		cidr = "10.0.1.7/22"
 	)
 	allocs, router := makeNetworkOfAllocators(3, cidr)
+	defer stopNetworkOfAllocators(allocs)
 	alloc1 := allocs[0]
 	alloc2 := allocs[1]
 	alloc3 := allocs[2] // This will be 'master' and get the first range
@@ -271,6 +272,7 @@ func TestFakeRouterSimple(t *testing.T) {
 		cidr = "10.0.1.7/22"
 	)
 	allocs, _ := makeNetworkOfAllocators(2, cidr)
+	defer stopNetworkOfAllocators(allocs)
 
 	alloc1 := allocs[0]
 	//alloc2 := allocs[1]
@@ -291,6 +293,7 @@ func TestAllocatorFuzz(t *testing.T) {
 		cidr         = "10.0.1.7/22"
 	)
 	allocs, _ := makeNetworkOfAllocators(nodes, cidr)
+	defer stopNetworkOfAllocators(allocs)
 
 	// Test state
 	// For each IP issued we store the allocator

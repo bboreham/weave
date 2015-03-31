@@ -324,3 +324,9 @@ func makeNetworkOfAllocators(size int, cidr string) ([]*Allocator, TestGossipRou
 	time.Sleep(1000 * time.Millisecond)
 	return allocs, gossipRouter
 }
+
+func stopNetworkOfAllocators(allocs []*Allocator) {
+	for _, alloc := range allocs {
+		alloc.Stop()
+	}
+}
