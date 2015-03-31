@@ -62,6 +62,7 @@ func (s *Set) AddSpace(newspace Space) {
 	s.spaces[i] = &newspace               // put in new element
 }
 
+// Clear removes all spaces from this space set.  Used during node shutdown.
 func (s *Set) Clear() {
 	s.spaces = s.spaces[:0]
 }
