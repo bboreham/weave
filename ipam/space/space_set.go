@@ -196,3 +196,25 @@ func (s *Set) Free(addr net.IP) error {
 	lg.Debug.Println("Address", addr, "not in range", s)
 	return fmt.Errorf("IP %s address not in range", addr)
 }
+
+// check if this Set Owns the given address
+func (s *Set) Owns(addr net.IP) bool {
+	for _, space := range s.spaces {
+		if space.contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+// Claim an address that we think we should own
+func (s *Set) Claim(addr net.IP) error {
+	for _, space := range s.spaces {
+		if done, err := space.Claim(addr); err != nil {
+			return err
+		} else if done {
+			return nil
+		}
+	}
+	return fmt.Errorf("IP %s address not in range", addr)
+}

@@ -59,6 +59,7 @@ type Allocator struct {
 	spaceSet      space.Set
 	owned         map[string][]net.IP // who owns what address, indexed by container-ID
 	pending       []pendingAllocation
+	claims        claimList
 	gossip        router.Gossip
 	shuttingDown  bool
 }
@@ -121,6 +122,7 @@ func (alloc *Allocator) checkPending() {
 // replied to, etc.
 func (alloc *Allocator) considerOurPosition() {
 	alloc.checkPending()
+	alloc.checkClaims()
 }
 
 func (alloc *Allocator) electLeaderIfNecessary() {

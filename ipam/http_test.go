@@ -91,6 +91,7 @@ func TestBadHttp(t *testing.T) {
 	)
 
 	alloc := testAllocator(t, "08:00:27:01:c3:9a", testCIDR1)
+	defer alloc.Stop()
 	port := rand.Intn(10000) + 32768
 	fmt.Println("BadHttp test on port", port)
 	go listenHTTP(port, alloc)
@@ -100,7 +101,7 @@ func TestBadHttp(t *testing.T) {
 	parts := strings.Split(cidr1, "/")
 	testAddr1 := parts[0]
 	// Verb that's not handled
-	resp, err := getHTTP("PUT", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
+	resp, err := getHTTP("POST", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
 	wt.AssertNoErr(t, err)
 	wt.AssertStatus(t, resp.StatusCode, http.StatusBadRequest, "http response")
 	// Mis-spelled URL

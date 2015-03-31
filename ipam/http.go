@@ -44,6 +44,16 @@ func (alloc *Allocator) HandleHTTP(mux *http.ServeMux) {
 		var closedChan = w.(http.CloseNotifier).CloseNotify()
 
 		switch r.Method {
+		case "PUT": // caller supplies an address to reserve for a container
+			ident, ipStr, err := parseURLWithIP(r.URL.Path)
+			if err != nil {
+				httpErrorAndLog(common.Warning, w, "Invalid request", http.StatusBadRequest, err.Error())
+			} else if ip := net.ParseIP(ipStr); ip == nil {
+				httpErrorAndLog(common.Warning, w, "Invalid IP", http.StatusBadRequest,
+					"Invalid IP in request: %s", ipStr)
+			} else if err = alloc.Claim(ident, ip, closedChan); err != nil {
+				httpErrorAndLog(common.Warning, w, "Unsuccessful claim: "+err.Error(), http.StatusBadRequest, "Unable to claim IP address %s: %s", ip, err)
+			}
 		case "GET": // caller requests one address for a container
 			ident, err := parseURL(r.URL.Path)
 			if err != nil {

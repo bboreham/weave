@@ -557,3 +557,23 @@ func (r *Ring) ExpireTombstones(now int64) {
 		r.Entries.remove(i)
 	}
 }
+
+func (r *Ring) Contains(addr net.IP) bool {
+	pos := utils.IP4int(addr)
+	return pos >= r.Start && pos < r.End
+}
+
+func (r *Ring) Owner(addr net.IP) router.PeerName {
+	r.assertInvariants()
+	defer r.assertInvariants()
+
+	token := utils.IP4int(addr)
+	entries := r.Entries.filteredEntries()
+	for i, entry := range entries {
+		if entries.between(token, i, i+1) {
+			return entry.Peer
+		}
+	}
+
+	return router.UnknownPeerName
+}

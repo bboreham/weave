@@ -30,6 +30,26 @@ func (space *Space) contains(addr net.IP) bool {
 	return diff >= 0 && diff < int64(space.Size)
 }
 
+// Mark an address as allocated on behalf of some specific container
+func (space *Space) Claim(addr net.IP) (bool, error) {
+	offset := utils.Subtract(addr, space.Start)
+	if !(offset >= 0 && offset < int64(space.Size)) {
+		return false, nil
+	}
+	// note: MaxAllocated is one more than the offset of the last allocated address
+	if uint32(offset) >= space.MaxAllocated {
+		// Need to add all the addresses in the gap to the free list
+		for i := space.MaxAllocated; i < uint32(offset); i++ {
+			addr := utils.Add(space.Start, i)
+			space.freelist.add(addr)
+		}
+		space.MaxAllocated = uint32(offset) + 1
+	} else if pos := space.freelist.find(addr); pos >= 0 {
+		space.freelist.removeAt(pos)
+	}
+	return true, nil
+}
+
 // Allocate returns the lowest availible IP within this space.
 func (space *Space) Allocate() net.IP {
 	space.assertInvariants()
