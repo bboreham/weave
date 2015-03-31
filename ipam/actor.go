@@ -22,6 +22,7 @@ func (alloc *Allocator) GetFor(ident string, cancelChan <-chan bool) net.IP {
 	alloc.actionChan <- func() {
 		if alloc.shuttingDown {
 			resultChan <- nil
+			return
 		}
 		alloc.electLeaderIfNecessary()
 		if addrs, found := alloc.owned[ident]; found && len(addrs) > 0 {
