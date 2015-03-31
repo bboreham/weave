@@ -7,6 +7,7 @@ import (
 	"net"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/zettio/weave/common"
 	"github.com/zettio/weave/ipam/utils"
@@ -499,6 +500,15 @@ func TestTombstoneMerge(t *testing.T) {
 	wt.AssertEquals(t, ring1.Entries, ring2.Entries)
 	wt.AssertTrue(t, RangesEqual(ring1.OwnedRanges(), []Range{{ipStart, ipEnd}}), "Invalid")
 	wt.AssertTrue(t, RangesEqual(ring2.OwnedRanges(), []Range{}), "Invalid")
+}
+
+func TestTombstoneDelete(t *testing.T) {
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring1.ClaimItAll()
+	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer2name)
+	wt.AssertSuccess(t, ring1.TombstonePeer(peer2name, 10))
+	ring1.ExpireTombstones(time.Now().Unix() + 15)
+	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer1name, Version: 1, Free: 128}})
 }
 
 type uint32slice []uint32

@@ -62,6 +62,10 @@ func (es entries) get(token uint32) (*entry, bool) {
 	return nil, false
 }
 
+func (es *entries) remove(i int) {
+	*es = (*es)[:i+copy((*es)[i:], (*es)[i+1:])]
+}
+
 // Is token between entries at i and j?
 // NB i and j can overflow and will wrap
 // NBB if entries[i].token == token, this will return true

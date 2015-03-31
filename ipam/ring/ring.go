@@ -1,8 +1,5 @@
 /*
 Package ring implements a simple ring CRDT.
-
-TODO: merge consequtively owned ranges
-TODO: implement tombstones
 */
 package ring
 
@@ -527,9 +524,9 @@ func (r *Ring) ChoosePeerToAskForSpace() (result router.PeerName, err error) {
 
 // TombstonePeer will mark all entries associated with this peer as tombstones
 func (r *Ring) TombstonePeer(peer router.PeerName, dt time.Duration) error {
-	if peer == r.Peername {
-		return ErrCannotTombstoneYourself
-	}
+	r.assertInvariants()
+	defer r.assertInvariants()
+
 	if dt <= 0 {
 		return ErrInvalidTimeout
 	}
@@ -544,4 +541,21 @@ func (r *Ring) TombstonePeer(peer router.PeerName, dt time.Duration) error {
 	}
 
 	return nil
+}
+
+// ExpireTombstones removes tombstone entries with timeouts greater than now
+func (r *Ring) ExpireTombstones(now int64) {
+	r.assertInvariants()
+	defer r.assertInvariants()
+
+	i := 0
+	for i < len(r.Entries) {
+		entry := r.Entries.entry(i)
+		if entry.Tombstone == 0 || entry.Tombstone > now {
+			i++
+			continue
+		}
+
+		r.Entries.remove(i)
+	}
 }

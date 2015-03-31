@@ -183,5 +183,6 @@ func (alloc *Allocator) actorLoop(actionChan <-chan func(), withTimers bool) {
 		}
 		alloc.assertInvariants()
 		alloc.reportFreeSpace()
+		alloc.ring.ExpireTombstones(time.Now().Unix())
 	}
 }
