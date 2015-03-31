@@ -116,7 +116,7 @@ func TestGrantSimple(t *testing.T) {
 	ring1 := New(ipStart, ipEnd, peer1name)
 	ring2 := New(ipStart, ipEnd, peer2name)
 
-	// Claim everything for peer1 - NB the special reservation
+	// Claim everything for peer1
 	ring1.ClaimItAll()
 	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer1name, Free: 255}})
 

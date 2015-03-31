@@ -102,8 +102,8 @@ func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
 	return &Ring{start, end, peer, make([]*entry, 0)}
 }
 
-// Returns the distance between two tokens on this ring, deali
-// with ranges with cross the origin
+// Returns the distance between two tokens on this ring, dealing
+// with ranges which cross the origin
 func (r *Ring) distance(start, end uint32) uint32 {
 	if end > start {
 		return end - start
@@ -143,7 +143,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	})
 	preceedingEntry--
 
-	utils.Assert(len(filteredEntries) > 0, "Here be dragons")
+	utils.Assert(len(filteredEntries) > 0, "Cannot grant into an empty ring, as by definition you don't own anything.")
 	utils.Assert(filteredEntries.entry(preceedingEntry).Peer == r.Peername, "Trying to grant in a range I don't own")
 
 	// At the end, the check is a little trickier.  There is never an entry with
@@ -223,6 +223,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	// after, it might be the same, but that will just under-estimate free
 	// space, which will get corrected by calls to ReportFree.
 	nextLiveEntry := filteredEntries.entry(preceedingEntry + 1)
+	endFree := r.distance(expectedNextToken, nextLiveEntry.Token)
 
 	switch {
 	// Case i(a) - there is already token at the end, and its not a tombstone
@@ -234,16 +235,13 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		endEntry.Peer = r.Peername
 		endEntry.Tombstone = 0
 		endEntry.Version++
-		// TODO this could underestimate, as next entry might be a tombstone
-		endEntry.Free = r.distance(expectedNextToken, nextLiveEntry.Token)
+		endEntry.Free = endFree
 		return
 
 	// Case ii & iii
 	default:
 		utils.Assert(!found, "WTF")
-		// This could underestimate, as entry token could be a tombstone
-		distance := r.distance(expectedNextToken, nextLiveEntry.Token)
-		r.Entries.insert(entry{Token: expectedNextToken, Peer: r.Peername, Free: distance})
+		r.Entries.insert(entry{Token: expectedNextToken, Peer: r.Peername, Free: endFree})
 	}
 }
 
@@ -452,7 +450,7 @@ func (r *Ring) String() string {
 }
 
 // ReportFree is used by the allocator to tell the ring
-// how many free ips are in a given ring, so that ChoosePeerToAskForSpace
+// how many free ips are in a given range, so that ChoosePeerToAskForSpace
 // can make more intelligent decisions.
 func (r *Ring) ReportFree(startIP net.IP, free uint32) {
 	start := utils.IP4int(startIP)
