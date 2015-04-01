@@ -8,6 +8,7 @@ import (
 	"github.com/davecheney/profile"
 	"github.com/gorilla/mux"
 	lg "github.com/zettio/weave/common"
+	"github.com/zettio/weave/common/updater"
 	"github.com/zettio/weave/ipam"
 	weavenet "github.com/zettio/weave/net"
 	weave "github.com/zettio/weave/router"
@@ -177,7 +178,7 @@ func createAllocator(router *weave.Router, apiPath string, allocCIDR string) *ip
 	allocator.SetGossip(router.NewGossip("IPallocation", allocator))
 	allocator.Start()
 	allocator.HandleHTTP(http.DefaultServeMux)
-	err = lg.StartUpdater(apiPath, allocator)
+	err = updater.Start(apiPath, allocator)
 	if err != nil {
 		lg.Error.Fatal("Unable to start watcher", err)
 	}
