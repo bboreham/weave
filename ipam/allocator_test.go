@@ -126,6 +126,31 @@ func TestElection(t *testing.T) {
 	CheckAllExpectedMessagesSent(alloc1, alloc2)
 }
 
+func TestAllocatorClaim(t *testing.T) {
+	const (
+		container1 = "abcdef"
+		container2 = "baddf00d"
+		container3 = "b01df00d"
+		universe   = "10.0.3.0/30"
+		testAddr1  = "10.0.3.1" // first address allocated should be .1 because .0 is network addr
+		spaceSize  = 4
+	)
+
+	alloc := testAllocator(t, "01:00:00:01:00:00", universe)
+	defer alloc.Stop()
+
+	ExpectBroadcastMessage(alloc, nil) // on leader election, broadcasts its state
+	addr1 := alloc.GetFor(container1, nil)
+	alloc.GetFor(container2, nil)
+
+	// Now free the first one, and try to claim it
+	alloc.Free(container1, net.ParseIP(testAddr1))
+	err := alloc.Claim(container3, addr1, nil)
+	wt.AssertNoErr(t, err)
+	addr3 := alloc.GetFor(container3, nil)
+	wt.AssertEqualString(t, addr3.String(), testAddr1, "address")
+}
+
 func (alloc *Allocator) sleepForTesting(d time.Duration) {
 	alloc.actionChan <- func() {
 		time.Sleep(d)
