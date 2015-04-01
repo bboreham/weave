@@ -733,7 +733,7 @@ case "$COMMAND" in
         echo $CONTAINER
         ;;
     attach)
-        [ $# -gt 1 ] || usage
+        [ $# -gt 0 ] || usage
         collect_cidr_args "$@"
         shift $CIDR_COUNT
         CONTAINER_ID="$1"
