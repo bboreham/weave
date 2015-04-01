@@ -124,7 +124,7 @@ func (routes *Routes) calculateBroadcast() map[PeerName][]PeerName {
 	broadcast := make(map[PeerName][]PeerName)
 	ourself := routes.ourself
 
-	routes.peers.ForEach(func(name PeerName, peer *Peer) {
+	routes.peers.ForEach(func(peer *Peer) {
 		hops := []PeerName{}
 		if found, reached := peer.Routes(ourself, true); found {
 			// This is rather similar to the inner loop on
@@ -132,18 +132,18 @@ func (routes *Routes) calculateBroadcast() map[PeerName][]PeerName {
 			// locking.
 			for _, conn := range ourself.Connections() {
 				if !conn.Established() {
-					return
+					continue
 				}
 				remoteName := conn.Remote().Name
 				if _, found := reached[remoteName]; found {
-					return
+					continue
 				}
 				if remoteConn, found := conn.Remote().ConnectionTo(ourself.Name); found && remoteConn.Established() {
 					hops = append(hops, remoteName)
 				}
 			}
 		}
-		broadcast[name] = hops
+		broadcast[peer.Name] = hops
 	})
 	return broadcast
 }

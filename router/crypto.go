@@ -11,7 +11,6 @@ import (
 	"encoding/gob"
 	"fmt"
 	"log"
-	"net"
 	"sync"
 )
 
@@ -107,7 +106,7 @@ type Encryptor interface {
 	PacketOverhead() int
 	IsEmpty() bool
 	Bytes() []byte
-	AppendFrame(*ForwardedFrame)
+	AppendFrame(src []byte, dst []byte, frame []byte)
 	TotalLen() int
 }
 
@@ -159,18 +158,17 @@ func (ne *NonEncryptor) Bytes() []byte {
 	return buf
 }
 
-func (ne *NonEncryptor) AppendFrame(frame *ForwardedFrame) {
+func (ne *NonEncryptor) AppendFrame(src []byte, dst []byte, frame []byte) {
 	bufTail := ne.bufTail
-	srcLen := copy(bufTail, frame.srcPeer.NameByte)
+	srcLen := copy(bufTail, src)
 	bufTail = bufTail[srcLen:]
-	dstLen := copy(bufTail, frame.dstPeer.NameByte)
+	dstLen := copy(bufTail, dst)
 	bufTail = bufTail[dstLen:]
-	frameLen := len(frame.frame)
-	binary.BigEndian.PutUint16(bufTail, uint16(frameLen))
+	binary.BigEndian.PutUint16(bufTail, uint16(len(frame)))
 	bufTail = bufTail[2:]
-	copy(bufTail, frame.frame)
-	ne.bufTail = bufTail[frameLen:]
-	ne.buffered += srcLen + dstLen + 2 + frameLen
+	copy(bufTail, frame)
+	ne.bufTail = bufTail[len(frame):]
+	ne.buffered += srcLen + dstLen + 2 + len(frame)
 }
 
 func (ne *NonEncryptor) TotalLen() int {
@@ -245,10 +243,10 @@ func (ne *NaClEncryptor) TotalLen() int {
 
 // Frame Decryptors
 
-type FrameConsumer func(*LocalConnection, *net.UDPAddr, []byte, []byte, uint16, []byte)
+type FrameConsumer func(conn *LocalConnection, src []byte, dst []byte, frame []byte)
 
 type Decryptor interface {
-	IterateFrames(FrameConsumer, *UDPPacket) error
+	IterateFrames([]byte, FrameConsumer) error
 	ReceiveNonce([]byte)
 	Shutdown()
 }
@@ -281,24 +279,23 @@ func NewNonDecryptor(conn *LocalConnection) *NonDecryptor {
 	return &NonDecryptor{conn: conn}
 }
 
-func (nd *NonDecryptor) IterateFrames(consumer FrameConsumer, packet *UDPPacket) error {
-	buf := packet.Packet
-	for len(buf) >= (2 + NameSize + NameSize) {
-		srcNameByte := buf[:NameSize]
-		buf = buf[NameSize:]
-		dstNameByte := buf[:NameSize]
-		buf = buf[NameSize:]
-		length := binary.BigEndian.Uint16(buf[:2])
-		buf = buf[2:]
-		if len(buf) < int(length) {
-			return PacketDecodingError{Desc: fmt.Sprintf("too short; expected frame of length %d, got %d", length, len(buf))}
+func (nd *NonDecryptor) IterateFrames(packet []byte, consumer FrameConsumer) error {
+	for len(packet) >= (2 + NameSize + NameSize) {
+		srcNameByte := packet[:NameSize]
+		packet = packet[NameSize:]
+		dstNameByte := packet[:NameSize]
+		packet = packet[NameSize:]
+		length := binary.BigEndian.Uint16(packet[:2])
+		packet = packet[2:]
+		if len(packet) < int(length) {
+			return PacketDecodingError{Desc: fmt.Sprintf("too short; expected frame of length %d, got %d", length, len(packet))}
 		}
-		frame := buf[:length]
-		buf = buf[length:]
-		consumer(nd.conn, packet.Sender, srcNameByte, dstNameByte, length, frame)
+		frame := packet[:length]
+		packet = packet[length:]
+		consumer(nd.conn, srcNameByte, dstNameByte, frame)
 	}
-	if len(buf) > 0 {
-		return PacketDecodingError{Desc: fmt.Sprintf("%d octets of trailing garbage", len(buf))}
+	if len(packet) > 0 {
+		return PacketDecodingError{Desc: fmt.Sprintf("%d octets of trailing garbage", len(packet))}
 	}
 	return nil
 }
@@ -311,24 +308,14 @@ func (nd *NonDecryptor) ReceiveNonce(msg []byte) {
 }
 
 func NewNaClDecryptor(conn *LocalConnection) *NaClDecryptor {
-	inst := NaClDecryptorInstance{
-		nonce:               nil,
-		previousNonce:       nil,
-		usedOffsets:         bit.New(),
-		previousUsedOffsets: nil,
-		highestOffsetSeen:   0,
-		nonceChan:           make(chan *[24]byte, ChannelSize)}
-	instDF := NaClDecryptorInstance{
-		nonce:               nil,
-		previousNonce:       nil,
-		usedOffsets:         bit.New(),
-		previousUsedOffsets: nil,
-		highestOffsetSeen:   0,
-		nonceChan:           make(chan *[24]byte, ChannelSize)}
 	return &NaClDecryptor{
 		NonDecryptor: *NewNonDecryptor(conn),
-		instance:     &inst,
-		instanceDF:   &instDF}
+		instance: &NaClDecryptorInstance{
+			usedOffsets: bit.New(),
+			nonceChan:   make(chan *[24]byte, ChannelSize)},
+		instanceDF: &NaClDecryptorInstance{
+			usedOffsets: bit.New(),
+			nonceChan:   make(chan *[24]byte, ChannelSize)}}
 }
 
 func (nd *NaClDecryptor) Shutdown() {
@@ -345,84 +332,27 @@ func (nd *NaClDecryptor) ReceiveNonce(msg []byte) {
 	}
 }
 
-func (nd *NaClDecryptor) IterateFrames(consumer FrameConsumer, packet *UDPPacket) error {
-	buf, err := nd.decrypt(packet.Packet)
+func (nd *NaClDecryptor) IterateFrames(packet []byte, consumer FrameConsumer) error {
+	buf, err := nd.decrypt(packet)
 	if err != nil {
 		return PacketDecodingError{Fatal: true, Desc: fmt.Sprint("decryption failed; ", err)}
 	}
-	packet.Packet = buf
-	return nd.NonDecryptor.IterateFrames(consumer, packet)
+	return nd.NonDecryptor.IterateFrames(buf, consumer)
 }
 
 func (nd *NaClDecryptor) decrypt(buf []byte) ([]byte, error) {
 	offset := binary.BigEndian.Uint16(buf[:2])
 	df := (offset & (1 << 15)) != 0
 	offsetNoFlags := offset & ((1 << 15) - 1)
-	var decState *NaClDecryptorInstance
+	var di *NaClDecryptorInstance
 	if df {
-		decState = nd.instanceDF
+		di = nd.instanceDF
 	} else {
-		decState = nd.instance
+		di = nd.instance
 	}
-	var nonce *[24]byte
-	var usedOffsets *bit.Set
-	var ok bool
-	if decState.nonce == nil {
-		if offsetNoFlags > (1 << 13) {
-			// offset is already beyond the first quarter and it's the
-			// first thing we've seen?! I don't think so.
-			return nil, fmt.Errorf("Unexpected offset when decrypting UDP packet")
-		}
-		decState.nonce, ok = <-decState.nonceChan
-		if !ok {
-			return nil, fmt.Errorf("Nonce chan closed")
-		}
-		decState.highestOffsetSeen = offsetNoFlags
-		nonce = decState.nonce
-		usedOffsets = decState.usedOffsets
-	} else {
-		highestOffsetSeen := decState.highestOffsetSeen
-		switch {
-		case offsetNoFlags < (1<<13) && highestOffsetSeen > ((1<<14)+(1<<13)) &&
-			(highestOffsetSeen-offsetNoFlags) > ((1<<14)+(1<<13)):
-			// offset is in the first quarter, highestOffsetSeen is in
-			// the top quarter and under a quarter behind us. We
-			// interpret this as we need to move to the next nonce
-			decState.previousUsedOffsets = decState.usedOffsets
-			decState.usedOffsets = bit.New()
-			decState.previousNonce = decState.nonce
-			decState.nonce, ok = <-decState.nonceChan
-			if !ok {
-				return nil, fmt.Errorf("Nonce chan closed")
-			}
-			decState.highestOffsetSeen = offsetNoFlags
-			nonce = decState.nonce
-			usedOffsets = decState.usedOffsets
-		case offsetNoFlags > highestOffsetSeen &&
-			(offsetNoFlags-highestOffsetSeen) < (1<<13):
-			// offset is under a quarter above highestOffsetSeen. This
-			// is ok - maybe some packet loss
-			decState.highestOffsetSeen = offsetNoFlags
-			nonce = decState.nonce
-			usedOffsets = decState.usedOffsets
-		case offsetNoFlags <= highestOffsetSeen &&
-			(highestOffsetSeen-offsetNoFlags) < (1<<13):
-			// offset is within a quarter of the highest we've
-			// seen. This is ok - just assuming some out-of-order
-			// delivery.
-			nonce = decState.nonce
-			usedOffsets = decState.usedOffsets
-		case highestOffsetSeen < (1<<13) && offsetNoFlags > ((1<<14)+(1<<13)) &&
-			(offsetNoFlags-highestOffsetSeen) > ((1<<14)+(1<<13)):
-			// offset is in the last quarter, highestOffsetSeen is in
-			// the first quarter, and offset is under a quarter behind
-			// us. This is ok - as above, just some out of order. But
-			// here it means we're dealing with the previous nonce
-			nonce = decState.previousNonce
-			usedOffsets = decState.previousUsedOffsets
-		default:
-			return nil, fmt.Errorf("Unexpected offset when decrypting UDP packet")
-		}
+	nonce, usedOffsets, err := di.advanceState(offsetNoFlags)
+	if err != nil {
+		return nil, err
 	}
 	offsetNoFlagsInt := int(offsetNoFlags)
 	if usedOffsets.Contains(offsetNoFlagsInt) {
@@ -435,6 +365,59 @@ func (nd *NaClDecryptor) decrypt(buf []byte) ([]byte, error) {
 	}
 	usedOffsets.Add(offsetNoFlagsInt)
 	return result, nil
+}
+
+func (di *NaClDecryptorInstance) advanceState(offsetNoFlags uint16) (*[24]byte, *bit.Set, error) {
+	var ok bool
+	if di.nonce == nil {
+		if offsetNoFlags > (1 << 13) {
+			// offset is already beyond the first quarter and it's the
+			// first thing we've seen?! I don't think so.
+			return nil, nil, fmt.Errorf("Unexpected offset when decrypting UDP packet")
+		}
+		di.nonce, ok = <-di.nonceChan
+		if !ok {
+			return nil, nil, fmt.Errorf("Nonce chan closed")
+		}
+		di.highestOffsetSeen = offsetNoFlags
+	} else {
+		highestOffsetSeen := di.highestOffsetSeen
+		switch {
+		case offsetNoFlags < (1<<13) && highestOffsetSeen > ((1<<14)+(1<<13)) &&
+			(highestOffsetSeen-offsetNoFlags) > ((1<<14)+(1<<13)):
+			// offset is in the first quarter, highestOffsetSeen is in
+			// the top quarter and under a quarter behind us. We
+			// interpret this as we need to move to the next nonce
+			di.previousUsedOffsets = di.usedOffsets
+			di.usedOffsets = bit.New()
+			di.previousNonce = di.nonce
+			di.nonce, ok = <-di.nonceChan
+			if !ok {
+				return nil, nil, fmt.Errorf("Nonce chan closed")
+			}
+			di.highestOffsetSeen = offsetNoFlags
+		case offsetNoFlags > highestOffsetSeen &&
+			(offsetNoFlags-highestOffsetSeen) < (1<<13):
+			// offset is under a quarter above highestOffsetSeen. This
+			// is ok - maybe some packet loss
+			di.highestOffsetSeen = offsetNoFlags
+		case offsetNoFlags <= highestOffsetSeen &&
+			(highestOffsetSeen-offsetNoFlags) < (1<<13):
+			// offset is within a quarter of the highest we've
+			// seen. This is ok - just assuming some out-of-order
+			// delivery.
+		case highestOffsetSeen < (1<<13) && offsetNoFlags > ((1<<14)+(1<<13)) &&
+			(offsetNoFlags-highestOffsetSeen) > ((1<<14)+(1<<13)):
+			// offset is in the last quarter, highestOffsetSeen is in
+			// the first quarter, and offset is under a quarter behind
+			// us. This is ok - as above, just some out of order. But
+			// here it means we're dealing with the previous nonce
+			return di.previousNonce, di.previousUsedOffsets, nil
+		default:
+			return nil, nil, fmt.Errorf("Unexpected offset when decrypting UDP packet")
+		}
+	}
+	return di.nonce, di.usedOffsets, nil
 }
 
 // TCP Senders

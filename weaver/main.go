@@ -130,7 +130,7 @@ func main() {
 	}
 
 	router := weave.NewRouter(iface, ourName, nickName, pwSlice, connLimit, bufSz*1024*1024, logFrameFunc(pktdebug))
-	log.Println("Our name is", router.Ourself.Name, "("+router.Ourself.NickName+")")
+	log.Println("Our name is", router.Ourself.FullName())
 	router.Start()
 	initiateConnections(router, peers)
 	var allocator *ipam.Allocator = nil

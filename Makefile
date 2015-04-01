@@ -1,7 +1,7 @@
 PUBLISH=publish_weave publish_weavedns publish_weaveexec
 
 .DEFAULT: all
-.PHONY: all update tests publish $(PUBLISH) clean prerequisites build
+.PHONY: all update tests publish $(PUBLISH) clean prerequisites build travis
 
 # If you can use docker without being root, you can do "make SUDO="
 SUDO=sudo
@@ -22,6 +22,8 @@ DOCKER_DISTRIB=weaveexec/docker-$(WEAVEEXEC_DOCKER_VERSION).tgz
 DOCKER_DISTRIB_URL=https://get.docker.com/builds/Linux/x86_64/docker-$(WEAVEEXEC_DOCKER_VERSION).tgz
 
 all: $(WEAVER_EXPORT) $(WEAVEDNS_EXPORT) $(WEAVEEXEC_EXPORT)
+
+travis: $(WEAVER_EXE) $(WEAVEDNS_EXE)
 
 update:
 	go get -u -f -v -tags -netgo ./$(dir $(WEAVER_EXE)) ./$(dir $(WEAVEDNS_EXE))
@@ -58,11 +60,8 @@ $(WEAVEEXEC_EXPORT): weaveexec/Dockerfile $(DOCKER_DISTRIB) weave
 $(DOCKER_DISTRIB):
 	curl -o $(DOCKER_DISTRIB) $(DOCKER_DISTRIB_URL)
 
-# Add more directories in here as more tests are created
 tests:
-	cd router; go test -cover -tags netgo
-	cd ipam; go test -cover -tags netgo
-	cd nameserver; go test -cover -tags netgo
+	go test -cover -tags netgo ./...
 
 $(PUBLISH): publish_%:
 	$(SUDO) docker tag -f $(DOCKERHUB_USER)/$* $(DOCKERHUB_USER)/$*:$(WEAVE_VERSION)

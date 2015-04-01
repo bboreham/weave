@@ -225,9 +225,9 @@ func (c *GossipChannel) GossipBroadcast(buf []byte) error {
 
 func (c *GossipChannel) LeaderElect() PeerName {
 	highest := PeerName(0)
-	c.ourself.Router.Peers.ForEach(func(name PeerName, _ *Peer) {
-		if highest < name {
-			highest = name
+	c.ourself.Router.Peers.ForEach(func(peer *Peer) {
+		if highest < peer.Name {
+			highest = peer.Name
 		}
 	})
 	return highest

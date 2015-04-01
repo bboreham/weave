@@ -48,6 +48,9 @@ func (cm *ConnectionMaker) Start() {
 func (cm *ConnectionMaker) InitiateConnection(address string) {
 	cm.actionChan <- func() bool {
 		cm.cmdLineAddress[NormalisePeerAddr(address)] = true
+		if target, found := cm.targets[address]; found {
+			target.tryAfter, target.tryInterval = tryImmediately()
+		}
 		return true
 	}
 }
@@ -132,11 +135,11 @@ func (cm *ConnectionMaker) checkStateAndAttemptConnections() time.Duration {
 
 	// Add targets for peers that someone else is connected to, but we
 	// aren't
-	cm.peers.ForEach(func(name PeerName, peer *Peer) {
+	cm.peers.ForEach(func(peer *Peer) {
 		for _, conn := range peer.Connections() {
 			otherPeer := conn.Remote().Name
 			if otherPeer == cm.ourself.Name || ourConnectedPeers[otherPeer] {
-				return
+				continue
 			}
 			address := conn.RemoteTCPAddr()
 			// try both portnumber of connection and standard port.  Don't use remote side of inbound connection.
@@ -149,6 +152,18 @@ func (cm *ConnectionMaker) checkStateAndAttemptConnections() time.Duration {
 		}
 	})
 
+	return cm.connectToTargets(validTarget, ourConnectedTargets)
+}
+
+func (cm *ConnectionMaker) addTarget(address string) {
+	if _, found := cm.targets[address]; !found {
+		target := &Target{}
+		target.tryAfter, target.tryInterval = tryImmediately()
+		cm.targets[address] = target
+	}
+}
+
+func (cm *ConnectionMaker) connectToTargets(validTarget map[string]bool, ourConnectedTargets map[string]bool) time.Duration {
 	now := time.Now() // make sure we catch items just added
 	after := MaxDuration
 	for address, target := range cm.targets {
@@ -172,14 +187,6 @@ func (cm *ConnectionMaker) checkStateAndAttemptConnections() time.Duration {
 		}
 	}
 	return after
-}
-
-func (cm *ConnectionMaker) addTarget(address string) {
-	if _, found := cm.targets[address]; !found {
-		target := &Target{}
-		target.tryAfter, target.tryInterval = tryImmediately()
-		cm.targets[address] = target
-	}
 }
 
 func (cm *ConnectionMaker) attemptConnection(address string, acceptNewPeer bool) {
