@@ -43,7 +43,7 @@ either (which may just be `ssh`).
 To make docker listen to a TCP socket, you will usually need to either
 run it manually with an option like `-H tcp://0.0.0.0:2375`; or, for
 apt-get installed docker (Ubuntu and Debian), add the line
-git 
+
 ```
 DOCKER_OPTS="--host unix:///var/run/docker.sock --host tcp://0.0.0.0:2375"
 ```
