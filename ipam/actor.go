@@ -64,8 +64,9 @@ func (alloc *Allocator) String() string {
 	return <-resultChan
 }
 
-// DeleteRecordsFor is provided to satisfy the updater interface; does a free underneath.  Async.
-func (alloc *Allocator) DeleteRecordsFor(ident string) error {
+// ContainerDied is provided to satisfy the updater interface; does a free underneath.  Async.
+func (alloc *Allocator) ContainerDied(ident string) error {
+	alloc.debugln("Container", ident, "died; releasing addresses")
 	alloc.actionChan <- func() {
 		for _, ip := range alloc.owned[ident] {
 			alloc.spaceSet.Free(ip)

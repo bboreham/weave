@@ -70,7 +70,7 @@ func (alloc *Allocator) HandleHTTP(mux *http.ServeMux) {
 			if err != nil {
 				httpErrorAndLog(common.Warning, w, "Invalid request", http.StatusBadRequest, err.Error())
 			} else if ipStr == "*" {
-				alloc.DeleteRecordsFor(ident)
+				alloc.ContainerDied(ident)
 			} else if ip := net.ParseIP(ipStr); ip == nil {
 				httpErrorAndLog(common.Warning, w, "Invalid IP", http.StatusBadRequest,
 					"Invalid IP in request: %s", ipStr)

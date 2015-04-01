@@ -23,9 +23,9 @@ func TestAllocFree(t *testing.T) {
 		container1 = "abcdef"
 		container2 = "baddf00d"
 		container3 = "b01df00d"
-		universe   = "10.0.3.0/30"
+		universe   = "10.0.3.0/28"
 		testAddr1  = "10.0.3.1" // first address allocated should be .1 because .0 is network addr
-		spaceSize  = 4
+		spaceSize  = 14         // 16 IP addresses in /28, minus .0 and .15
 	)
 
 	alloc := testAllocator(t, "01:00:00:01:00:00", universe)
@@ -50,9 +50,10 @@ func TestAllocFree(t *testing.T) {
 	addr3 := alloc.GetFor(container3, nil)
 	wt.AssertEqualString(t, addr3.String(), testAddr1, "address")
 
-	alloc.DeleteRecordsFor(container2)
-	alloc.DeleteRecordsFor(container3)
+	alloc.ContainerDied(container2)
+	alloc.ContainerDied(container3)
 	alloc.String() // force sync-up after async call
+	wt.AssertEqualUint32(t, alloc.spaceSet.NumFreeAddresses(), spaceSize, "Total free addresses")
 }
 
 func TestElection(t *testing.T) {
@@ -133,7 +134,6 @@ func TestAllocatorClaim(t *testing.T) {
 		container3 = "b01df00d"
 		universe   = "10.0.3.0/30"
 		testAddr1  = "10.0.3.1" // first address allocated should be .1 because .0 is network addr
-		spaceSize  = 4
 	)
 
 	alloc := testAllocator(t, "01:00:00:01:00:00", universe)
@@ -222,7 +222,6 @@ func TestGossipShutdown(t *testing.T) {
 		container2 = "baddf00d"
 		universe   = "10.0.3.0/30"
 		testAddr1  = "10.0.3.1" // first address allocated should be .1 because .0 is network addr
-		spaceSize  = 4
 	)
 
 	alloc := testAllocator(t, "01:00:00:01:00:00", universe)
