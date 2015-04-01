@@ -468,7 +468,7 @@ wait_for_status() {
 
 # Tell the newly-started weaveDNS about existing weave IPs
 populate_dns() {
-    if [ ! wait_for_status $DNS_CONTAINER_NAME $DNS_HTTP_PORT ] ; then
+    if ! wait_for_status $DNS_CONTAINER_NAME $DNS_HTTP_PORT ; then
         echo "If running, it will not be pre-populated." >&2
         return 0
     fi
