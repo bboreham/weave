@@ -124,17 +124,6 @@ func (alloc *Allocator) OnGossip(msg []byte) (router.GossipData, error) {
 	return nil, err // for now, we never propagate updates. TBD
 }
 
-// TombstonePeer (Sync) - inserts tombstones for given peer, freeing up the ranges the
-// peer owns.  Eventually the peer will go away.
-func (alloc *Allocator) TombstonePeer(peer router.PeerName) error {
-	alloc.debugln("TombstonePeer:", peer)
-	resultChan := make(chan error)
-	alloc.actionChan <- func() {
-		resultChan <- alloc.tombstonePeer(peer)
-	}
-	return <-resultChan
-}
-
 // OnShutdown (Sync)
 func (alloc *Allocator) OnShutdown() {
 	alloc.debugln("OnShutdown")
