@@ -624,6 +624,12 @@ case "$COMMAND" in
                     NICKNAME="$2"
                     shift 2
                     ;;
+                -alloc)
+                    [ $# -gt 1 ] || usage
+                    validate_cidr $2
+                    ALLOC="-alloc $2"
+                    shift 2
+                    ;;
                 *)
                     break
                     ;;
@@ -634,9 +640,9 @@ case "$COMMAND" in
         # when launching the weave container.
         CONTAINER=$(docker run --privileged -d --name=$CONTAINER_NAME \
             -p $PORT:$PORT/tcp -p $PORT:$PORT/udp -e WEAVE_PASSWORD -v /var/run/docker.sock:/var/run/docker.sock \
-            $WEAVE_DOCKER_ARGS $IMAGE -iface $CONTAINER_IFNAME -name $MACADDR -nickname "$NICKNAME" "$@")
+            $WEAVE_DOCKER_ARGS $IMAGE -iface $CONTAINER_IFNAME -name $MACADDR -nickname "$NICKNAME" $ALLOC "$@")
         with_container_netns $CONTAINER launch >/dev/null
-        populate_ipam
+        [ -z "$ALLOC" ] || populate_ipam
         echo $CONTAINER
         ;;
     test-launch)
