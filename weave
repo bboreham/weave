@@ -234,6 +234,17 @@ create_bridge() {
     configure_arp_cache $BRIDGE
 }
 
+expose() {
+    CIDR="$1"
+    if ! ip addr show dev $BRIDGE | grep -qF $CIDR
+    then
+        ip addr add dev $BRIDGE $CIDR
+        arp_update $BRIDGE $CIDR
+        add_iptables_rule nat WEAVE -o $BRIDGE ! -s $CIDR -j MASQUERADE
+        add_iptables_rule nat WEAVE -s $CIDR ! -o $BRIDGE -j MASQUERADE
+    fi
+}
+
 destroy_bridge() {
     if [ -d /sys/class/net/$BRIDGE ] ; then
         ip link del dev $BRIDGE
@@ -781,17 +792,11 @@ case "$COMMAND" in
         tell_dns DELETE $CONTAINER_ID $CIDR_ARGS
         ;;
     expose)
-        [ $# -gt 0 ] || usage
+        create_bridge --without-ethtool
+        [ $# -gt 0 ] || expose "$(http_call $CONTAINER_NAME $HTTP_PORT GET /ip/weave)"
         for CIDR; do
             validate_cidr $CIDR
-            create_bridge --without-ethtool
-            if ! ip addr show dev $BRIDGE | grep -qF $CIDR
-            then
-                ip addr add dev $BRIDGE $CIDR
-                arp_update $BRIDGE $CIDR
-                add_iptables_rule nat WEAVE -o $BRIDGE ! -s $CIDR -j MASQUERADE
-                add_iptables_rule nat WEAVE -s $CIDR ! -o $BRIDGE -j MASQUERADE
-            fi
+            expose $CIDR
         done
         ;;
     hide)
