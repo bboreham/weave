@@ -136,10 +136,6 @@ func main() {
 	router.Start()
 	initiateConnections(router, peers)
 	var allocator *ipam.Allocator = nil
-	// hack for testing
-	if allocCIDR == "" {
-		allocCIDR = "10.0.1.0/24"
-	}
 	if allocCIDR != "" {
 		allocator = createAllocator(router, apiPath, allocCIDR)
 	}
