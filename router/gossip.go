@@ -19,9 +19,9 @@ type GossipData interface {
 type Gossip interface {
 	// specific message from one peer to another
 	// intermediate peers relay it using unicast topology.
-	GossipUnicast(dstPeerName PeerName, buf []byte) error
-	// send a message to every peer, relayed using broadcast topology.
-	GossipBroadcast(buf []byte) error
+	GossipUnicast(dstPeerName PeerName, msg []byte) error
+	// send gossip to every peer, relayed using broadcast topology.
+	GossipBroadcast(update GossipData) error
 }
 
 type Leadership interface {
@@ -30,24 +30,25 @@ type Leadership interface {
 
 type Gossiper interface {
 	OnGossipUnicast(sender PeerName, msg []byte) error
-	OnGossipBroadcast(msg []byte) error
+	// merge received data into state and return a representation of
+	// the received data, for further propagation
+	OnGossipBroadcast(update []byte) (GossipData, error)
 	// return state of everything we know; gets called periodically
 	Gossip() GossipData
-	// merge in state and return "everything new I've just learnt",
-	// or nil if nothing in the received message was new
-	OnGossip(buf []byte) (GossipData, error)
+	// merge received data into state and return "everything new I've
+	// just learnt", or nil if nothing in the received data was new
+	OnGossip(update []byte) (GossipData, error)
 }
 
 // Accumulates GossipData that needs to be sent to one destination,
 // and sends it when possible.
 type GossipSender struct {
-	channel *GossipChannel
-	sender  ProtocolSender
-	cell    chan GossipData
+	send func(GossipData)
+	cell chan GossipData
 }
 
-func NewGossipSender(c *GossipChannel, ps ProtocolSender) *GossipSender {
-	return &GossipSender{channel: c, sender: ps}
+func NewGossipSender(send func(GossipData)) *GossipSender {
+	return &GossipSender{send: send}
 }
 
 func (sender *GossipSender) Start() {
@@ -60,13 +61,9 @@ func (sender *GossipSender) run() {
 		if pending := <-sender.cell; pending == nil { // receive zero value when chan is closed
 			break
 		} else {
-			sender.sendPending(pending)
+			sender.send(pending)
 		}
 	}
-}
-
-func (sender *GossipSender) sendPending(pending GossipData) {
-	sender.sender.SendProtocolMsg(sender.channel.gossipMsg(pending.Encode()))
 }
 
 func (sender *GossipSender) Send(data GossipData) {
@@ -84,42 +81,45 @@ func (sender *GossipSender) Stop() {
 	close(sender.cell)
 }
 
-type senderMap map[Connection]*GossipSender
+type connectionSenders map[Connection]*GossipSender
+type peerSenders map[PeerName]*GossipSender
 
 type GossipChannel struct {
 	sync.Mutex
-	ourself  *LocalPeer
-	name     string
-	hash     uint32
-	gossiper Gossiper
-	senders  senderMap
+	ourself      *LocalPeer
+	name         string
+	hash         uint32
+	gossiper     Gossiper
+	senders      connectionSenders
+	broadcasters peerSenders
 }
 
 func (router *Router) NewGossip(channelName string, g Gossiper) Gossip {
 	channelHash := hash(channelName)
 	channel := &GossipChannel{
-		ourself:  router.Ourself,
-		name:     channelName,
-		hash:     channelHash,
-		gossiper: g,
-		senders:  make(senderMap)}
+		ourself:      router.Ourself,
+		name:         channelName,
+		hash:         channelHash,
+		gossiper:     g,
+		senders:      make(connectionSenders),
+		broadcasters: make(peerSenders)}
 	router.GossipChannels[channelHash] = channel
 	return channel
 }
 
 func (router *Router) SendAllGossip() {
 	for _, channel := range router.GossipChannels {
-		channel.SendGossip(channel.gossiper.Gossip())
+		channel.Send(channel.gossiper.Gossip())
 	}
 }
 
 func (router *Router) SendAllGossipDown(conn Connection) {
 	for _, channel := range router.GossipChannels {
-		channel.SendGossipDown(conn, channel.gossiper.Gossip())
+		channel.SendDown(conn, channel.gossiper.Gossip())
 	}
 }
 
-func (router *Router) handleGossip(payload []byte, onok func(*GossipChannel, PeerName, []byte, *gob.Decoder) error) error {
+func (router *Router) handleGossip(tag ProtocolTag, payload []byte) error {
 	decoder := gob.NewDecoder(bytes.NewReader(payload))
 	var channelHash uint32
 	if err := decoder.Decode(&channelHash); err != nil {
@@ -133,58 +133,64 @@ func (router *Router) handleGossip(payload []byte, onok func(*GossipChannel, Pee
 	if err := decoder.Decode(&srcName); err != nil {
 		return err
 	}
-	if err := onok(channel, srcName, payload, decoder); err != nil {
-		return err
+	switch tag {
+	case ProtocolGossipUnicast:
+		return channel.deliverUnicast(srcName, payload, decoder)
+	case ProtocolGossipBroadcast:
+		return channel.deliverBroadcast(srcName, payload, decoder)
+	case ProtocolGossip:
+		return channel.deliver(srcName, payload, decoder)
 	}
 	return nil
 }
 
-func deliverGossipUnicast(channel *GossipChannel, srcName PeerName, origPayload []byte, dec *gob.Decoder) error {
+func (c *GossipChannel) deliverUnicast(srcName PeerName, origPayload []byte, dec *gob.Decoder) error {
 	var destName PeerName
 	if err := dec.Decode(&destName); err != nil {
 		return err
 	}
-	if channel.ourself.Name != destName {
-		return channel.relayGossipUnicast(destName, origPayload)
+	if c.ourself.Name != destName {
+		return c.relayUnicast(destName, origPayload)
 	}
 	var payload []byte
 	if err := dec.Decode(&payload); err != nil {
 		return err
 	}
-	return channel.gossiper.OnGossipUnicast(srcName, payload)
+	return c.gossiper.OnGossipUnicast(srcName, payload)
 }
 
-func deliverGossipBroadcast(channel *GossipChannel, srcName PeerName, origPayload []byte, dec *gob.Decoder) error {
+func (c *GossipChannel) deliverBroadcast(srcName PeerName, _ []byte, dec *gob.Decoder) error {
 	var payload []byte
 	if err := dec.Decode(&payload); err != nil {
 		return err
 	}
-	if err := channel.gossiper.OnGossipBroadcast(payload); err != nil {
+	data, err := c.gossiper.OnGossipBroadcast(payload)
+	if err != nil || data == nil {
 		return err
 	}
-	return channel.relayGossipBroadcast(srcName, origPayload)
+	return c.relayBroadcast(srcName, data)
 }
 
-func deliverGossip(channel *GossipChannel, srcName PeerName, _ []byte, dec *gob.Decoder) error {
+func (c *GossipChannel) deliver(_ PeerName, _ []byte, dec *gob.Decoder) error {
 	var payload []byte
 	if err := dec.Decode(&payload); err != nil {
 		return err
 	}
-	if data, err := channel.gossiper.OnGossip(payload); err != nil {
+	if data, err := c.gossiper.OnGossip(payload); err != nil {
 		return err
 	} else if data != nil {
-		channel.SendGossip(data)
+		c.Send(data)
 	}
 	return nil
 }
 
-func (c *GossipChannel) SendGossip(data GossipData) {
+func (c *GossipChannel) Send(data GossipData) {
 	connections := c.ourself.Connections() // do this outside the lock so they don't nest
-	retainedSenders := make(senderMap)
+	retainedSenders := make(connectionSenders)
 	c.Lock()
 	defer c.Unlock()
-	for _, conn := range connections {
-		c.sendGossipDown(conn, data)
+	for conn := range connections {
+		c.sendDown(conn, data)
 		retainedSenders[conn] = c.senders[conn]
 		delete(c.senders, conn)
 	}
@@ -195,32 +201,31 @@ func (c *GossipChannel) SendGossip(data GossipData) {
 	c.senders = retainedSenders
 }
 
-func (c *GossipChannel) SendGossipDown(conn Connection, data GossipData) {
+func (c *GossipChannel) SendDown(conn Connection, data GossipData) {
 	c.Lock()
-	c.sendGossipDown(conn, data)
+	c.sendDown(conn, data)
 	c.Unlock()
 }
 
-func (c *GossipChannel) sendGossipDown(conn Connection, data GossipData) {
+func (c *GossipChannel) sendDown(conn Connection, data GossipData) {
 	sender, found := c.senders[conn]
 	if !found {
-		sender = NewGossipSender(c, conn.(ProtocolSender))
+		sender = NewGossipSender(func(pending GossipData) {
+			protocolMsg := ProtocolMsg{ProtocolGossip, GobEncode(c.hash, c.ourself.Name, pending.Encode())}
+			conn.(ProtocolSender).SendProtocolMsg(protocolMsg)
+		})
 		c.senders[conn] = sender
 		sender.Start()
 	}
 	sender.Send(data)
 }
 
-func (c *GossipChannel) gossipMsg(buf []byte) ProtocolMsg {
-	return ProtocolMsg{ProtocolGossip, GobEncode(c.hash, c.ourself.Name, buf)}
+func (c *GossipChannel) GossipUnicast(dstPeerName PeerName, msg []byte) error {
+	return c.relayUnicast(dstPeerName, GobEncode(c.hash, c.ourself.Name, dstPeerName, msg))
 }
 
-func (c *GossipChannel) GossipUnicast(dstPeerName PeerName, buf []byte) error {
-	return c.relayGossipUnicast(dstPeerName, GobEncode(c.hash, c.ourself.Name, dstPeerName, buf))
-}
-
-func (c *GossipChannel) GossipBroadcast(buf []byte) error {
-	return c.relayGossipBroadcast(c.ourself.Name, GobEncode(c.hash, c.ourself.Name, buf))
+func (c *GossipChannel) GossipBroadcast(update GossipData) error {
+	return c.relayBroadcast(c.ourself.Name, update)
 }
 
 func (c *GossipChannel) LeaderElect() PeerName {
@@ -233,29 +238,90 @@ func (c *GossipChannel) LeaderElect() PeerName {
 	return highest
 }
 
-func (c *GossipChannel) relayGossipUnicast(dstPeerName PeerName, msg []byte) error {
-	if relayPeerName, found := c.ourself.Router.Routes.Unicast(dstPeerName); !found {
+func (c *GossipChannel) relayUnicast(dstPeerName PeerName, buf []byte) error {
+	if relayPeerName, found := c.ourself.Router.Routes.UnicastAll(dstPeerName); !found {
 		c.log("unknown relay destination:", dstPeerName)
 	} else if conn, found := c.ourself.ConnectionTo(relayPeerName); !found {
 		c.log("unable to find connection to relay peer", relayPeerName)
 	} else {
-		conn.(ProtocolSender).SendProtocolMsg(ProtocolMsg{ProtocolGossipUnicast, msg})
+		conn.(ProtocolSender).SendProtocolMsg(ProtocolMsg{ProtocolGossipUnicast, buf})
 	}
 	return nil
 }
 
-func (c *GossipChannel) relayGossipBroadcast(srcName PeerName, msg []byte) error {
-	if srcPeer, found := c.ourself.Router.Peers.Fetch(srcName); !found {
-		c.log("unable to relay broadcast from unknown peer", srcName)
-	} else {
-		protocolMsg := ProtocolMsg{ProtocolGossipBroadcast, msg}
-		for _, conn := range c.ourself.NextBroadcastHops(srcPeer) {
-			conn.SendProtocolMsg(protocolMsg)
+func (c *GossipChannel) relayBroadcast(srcName PeerName, update GossipData) error {
+	names := c.ourself.Router.Peers.Names() // do this outside the lock so they don't nest
+	c.Lock()
+	defer c.Unlock()
+	// GC - randomly (courtesy of go's map iterator) pick some
+	// existing broadcasters and stop&remove them if their source peer
+	// is unknown. We stop as soon as we encounter a valid entry; the
+	// idea being that when there is little or no garbage then this
+	// executes close to O(1)[1], whereas when there is lots of
+	// garbage we remove it quickly.
+	//
+	// [1] TODO Unfortunately, due to the desire to avoid nested
+	// locks, instead of simply invoking Peers.Fetch(name) below, we
+	// have that Peers.Names() invocation above. That is O(n_peers) at
+	// best.
+	for name, broadcaster := range c.broadcasters {
+		if _, found := names[name]; !found {
+			delete(c.broadcasters, name)
+			broadcaster.Stop()
+		} else {
+			break
 		}
 	}
+	broadcaster, found := c.broadcasters[srcName]
+	if !found {
+		broadcaster = NewGossipSender(func(pending GossipData) { c.sendBroadcast(srcName, pending) })
+		c.broadcasters[srcName] = broadcaster
+		broadcaster.Start()
+	}
+	broadcaster.Send(update)
 	return nil
+}
+
+func (c *GossipChannel) sendBroadcast(srcName PeerName, update GossipData) {
+	c.ourself.Router.Routes.EnsureRecalculated()
+	nextHops := c.ourself.Router.Routes.BroadcastAll(srcName)
+	if len(nextHops) == 0 {
+		return
+	}
+	protocolMsg := ProtocolMsg{ProtocolGossipBroadcast, GobEncode(c.hash, srcName, update.Encode())}
+	// FIXME a single blocked connection can stall us
+	for _, conn := range c.ourself.ConnectionsTo(nextHops) {
+		conn.(ProtocolSender).SendProtocolMsg(protocolMsg)
+	}
 }
 
 func (c *GossipChannel) log(args ...interface{}) {
 	log.Println(append(append([]interface{}{}, "[gossip "+c.name+"]:"), args...)...)
+}
+
+// for testing
+
+// FIXME this doesn't actually guarantee everything has been sent
+// since a GossipSender may be in the process of sending and there is
+// no easy way for us to know when that has completed.
+func (router *Router) sendPendingGossip() {
+	for _, channel := range router.GossipChannels {
+		for _, sender := range channel.senders {
+			sender.flush()
+		}
+		for _, sender := range channel.broadcasters {
+			sender.flush()
+		}
+	}
+}
+
+func (sender *GossipSender) flush() {
+	for {
+		select {
+		case pending := <-sender.cell:
+			sender.send(pending)
+		default:
+			return
+		}
+	}
 }

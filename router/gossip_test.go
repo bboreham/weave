@@ -14,44 +14,22 @@ type mockChannelConnection struct {
 	dest *Router
 }
 
-// Construct a "passive" Router, i.e. without any goroutines.
-//
-// We need to create some dummy channels otherwise tests hang on nil
-// channels when Router.OnGossip() calls async methods.
+// Construct a "passive" Router, i.e. without any goroutines, except
+// for Routes and GossipSenders.
 func NewTestRouter(name PeerName) *Router {
 	router := NewRouter(nil, name, "", nil, 10, 1024, nil)
+	// need to create a dummy channel otherwise tests hang on nil
+	// channels when the Router invoked ConnectionMaker.Refresh
 	router.ConnectionMaker.actionChan = make(chan ConnectionMakerAction, ChannelSize)
-	router.Routes.actionChan = make(chan RoutesAction, ChannelSize)
+	router.Routes.Start()
 	return router
 }
 
 func (conn *mockChannelConnection) SendProtocolMsg(protocolMsg ProtocolMsg) {
-	if err := conn.dest.handleGossip(protocolMsg.msg, deliverGossip); err != nil {
+	if err := conn.dest.handleGossip(protocolMsg.tag, protocolMsg.msg); err != nil {
 		panic(err)
 	}
 	conn.dest.sendPendingGossip()
-}
-
-// FIXME this doesn't actually guarantee everything has been sent
-// since a GossipSender may be in the process of sending and there is
-// no easy way for us to know when that has completed.
-func (router *Router) sendPendingGossip() {
-	for _, channel := range router.GossipChannels {
-		for _, sender := range channel.senders {
-			sender.flush()
-		}
-	}
-}
-
-func (sender *GossipSender) flush() {
-	for {
-		select {
-		case pending := <-sender.cell:
-			sender.sendPending(pending)
-		default:
-			return
-		}
-	}
 }
 
 func (router *Router) AddTestChannelConnection(r *Router) {

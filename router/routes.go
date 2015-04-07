@@ -8,28 +8,39 @@ import (
 
 type Routes struct {
 	sync.RWMutex
-	ourself    *Peer
-	peers      *Peers
-	unicast    map[PeerName]PeerName
-	broadcast  map[PeerName][]PeerName
-	actionChan chan<- RoutesAction
+	ourself      *Peer
+	peers        *Peers
+	unicast      map[PeerName]PeerName
+	unicastAll   map[PeerName]PeerName // [1]
+	broadcast    map[PeerName][]PeerName
+	broadcastAll map[PeerName][]PeerName // [1]
+	recalculate  chan<- *struct{}
+	wait         chan<- chan struct{}
+	// [1] based on *all* connections, not just established &
+	// symmetric ones
 }
 
 func NewRoutes(ourself *Peer, peers *Peers) *Routes {
 	routes := &Routes{
-		ourself:   ourself,
-		peers:     peers,
-		unicast:   make(map[PeerName]PeerName),
-		broadcast: make(map[PeerName][]PeerName)}
+		ourself:      ourself,
+		peers:        peers,
+		unicast:      make(map[PeerName]PeerName),
+		unicastAll:   make(map[PeerName]PeerName),
+		broadcast:    make(map[PeerName][]PeerName),
+		broadcastAll: make(map[PeerName][]PeerName)}
 	routes.unicast[ourself.Name] = UnknownPeerName
+	routes.unicastAll[ourself.Name] = UnknownPeerName
 	routes.broadcast[ourself.Name] = []PeerName{}
+	routes.broadcastAll[ourself.Name] = []PeerName{}
 	return routes
 }
 
 func (routes *Routes) Start() {
-	actionChan := make(chan RoutesAction, ChannelSize)
-	routes.actionChan = actionChan
-	go routes.actorLoop(actionChan)
+	recalculate := make(chan *struct{}, 1)
+	wait := make(chan chan struct{})
+	routes.recalculate = recalculate
+	routes.wait = wait
+	go routes.run(recalculate, wait)
 }
 
 func (routes *Routes) Unicast(name PeerName) (PeerName, bool) {
@@ -39,10 +50,27 @@ func (routes *Routes) Unicast(name PeerName) (PeerName, bool) {
 	return hop, found
 }
 
+func (routes *Routes) UnicastAll(name PeerName) (PeerName, bool) {
+	routes.RLock()
+	defer routes.RUnlock()
+	hop, found := routes.unicastAll[name]
+	return hop, found
+}
+
 func (routes *Routes) Broadcast(name PeerName) []PeerName {
 	routes.RLock()
 	defer routes.RUnlock()
 	hops, found := routes.broadcast[name]
+	if !found {
+		return []PeerName{}
+	}
+	return hops
+}
+
+func (routes *Routes) BroadcastAll(name PeerName) []PeerName {
+	routes.RLock()
+	defer routes.RUnlock()
+	hops, found := routes.broadcastAll[name]
 	if !found {
 		return []PeerName{}
 	}
@@ -57,35 +85,64 @@ func (routes *Routes) String() string {
 	for name, hop := range routes.unicast {
 		fmt.Fprintf(&buf, "%s -> %s\n", name, hop)
 	}
-	fmt.Sprintln(&buf, "broadcast:")
+	fmt.Fprintln(&buf, "broadcast:")
 	for name, hops := range routes.broadcast {
 		fmt.Fprintf(&buf, "%s -> %v\n", name, hops)
 	}
+	// We don't include the 'all' routes here since they are of
+	// limited utility in troubleshooting
 	return buf.String()
 }
 
-// ACTOR client API
-
-type RoutesAction func()
-
-// Async.
+// Request recalculation of the routing table. This is async but can
+// effectively be made synchronous with a subsequent call to
+// EnsureRecalculated.
 func (routes *Routes) Recalculate() {
-	routes.actionChan <- func() {
-		unicast := routes.calculateUnicast()
-		broadcast := routes.calculateBroadcast()
-		routes.Lock()
-		routes.unicast = unicast
-		routes.broadcast = broadcast
-		routes.Unlock()
+	// The use of a 1-capacity channel in combination with the
+	// non-blocking send is an optimisation that results in multiple
+	// requests being coalesced.
+	select {
+	case routes.recalculate <- nil:
+	default:
 	}
 }
 
-// ACTOR server
+// Wait for any preceding Recalculate requests to be processed.
+func (routes *Routes) EnsureRecalculated() {
+	done := make(chan struct{})
+	routes.wait <- done
+	<-done
+}
 
-func (routes *Routes) actorLoop(actionChan <-chan RoutesAction) {
+func (routes *Routes) run(recalculate <-chan *struct{}, wait <-chan chan struct{}) {
 	for {
-		(<-actionChan)()
+		select {
+		case <-recalculate:
+			routes.calculate()
+		case done := <-wait:
+			select {
+			case <-recalculate:
+				routes.calculate()
+			default:
+			}
+			close(done)
+		}
 	}
+}
+
+func (routes *Routes) calculate() {
+	var (
+		unicast      = routes.calculateUnicast(true)
+		unicastAll   = routes.calculateUnicast(false)
+		broadcast    = routes.calculateBroadcast(true)
+		broadcastAll = routes.calculateBroadcast(false)
+	)
+	routes.Lock()
+	routes.unicast = unicast
+	routes.unicastAll = unicastAll
+	routes.broadcast = broadcast
+	routes.broadcastAll = broadcastAll
+	routes.Unlock()
 }
 
 // Calculate all the routes for the question: if *we* want to send a
@@ -97,8 +154,8 @@ func (routes *Routes) actorLoop(actionChan <-chan RoutesAction) {
 // any knowledge of the MAC address at all. Thus there's no need
 // to exchange knowledge of MAC addresses, nor any constraints on
 // the routes that we construct.
-func (routes *Routes) calculateUnicast() map[PeerName]PeerName {
-	_, unicast := routes.ourself.Routes(nil, true)
+func (routes *Routes) calculateUnicast(establishedAndSymmetric bool) map[PeerName]PeerName {
+	_, unicast := routes.ourself.Routes(nil, establishedAndSymmetric)
 	return unicast
 }
 
@@ -120,25 +177,25 @@ func (routes *Routes) calculateUnicast() map[PeerName]PeerName {
 //     Y =/= Z /\ X.Routes(Y) <= X.Routes(Z) =>
 //     X.Routes(Y) u [P | Y.HasSymmetricConnectionTo(P)] <= X.Routes(Z)
 // where <= is the subset relationship on keys of the returned map.
-func (routes *Routes) calculateBroadcast() map[PeerName][]PeerName {
+func (routes *Routes) calculateBroadcast(establishedAndSymmetric bool) map[PeerName][]PeerName {
 	broadcast := make(map[PeerName][]PeerName)
 	ourself := routes.ourself
 
 	routes.peers.ForEach(func(peer *Peer) {
 		hops := []PeerName{}
-		if found, reached := peer.Routes(ourself, true); found {
+		if found, reached := peer.Routes(ourself, establishedAndSymmetric); found {
 			// This is rather similar to the inner loop on
 			// peer.Routes(...); the main difference is in the
 			// locking.
-			for _, conn := range ourself.Connections() {
-				if !conn.Established() {
+			for conn := range ourself.Connections() {
+				if establishedAndSymmetric && !conn.Established() {
 					continue
 				}
 				remoteName := conn.Remote().Name
 				if _, found := reached[remoteName]; found {
 					continue
 				}
-				if remoteConn, found := conn.Remote().ConnectionTo(ourself.Name); found && remoteConn.Established() {
+				if remoteConn, found := conn.Remote().ConnectionTo(ourself.Name); !establishedAndSymmetric || (found && remoteConn.Established()) {
 					hops = append(hops, remoteName)
 				}
 			}

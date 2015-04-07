@@ -63,7 +63,7 @@ func main() {
 	flag.BoolVar(&pktdebug, "pktdebug", false, "enable per-packet debug logging")
 	flag.BoolVar(&debug, "debug", false, "enable debug logging")
 	flag.StringVar(&prof, "profile", "", "enable profiling and write profiles to given path")
-	flag.IntVar(&connLimit, "connlimit", 10, "connection limit (defaults to 10, set to 0 for unlimited)")
+	flag.IntVar(&connLimit, "connlimit", 30, "connection limit (defaults to 30, set to 0 for unlimited)")
 	flag.IntVar(&bufSz, "bufsz", 8, "capture buffer size in MB (defaults to 8MB)")
 	flag.StringVar(&allocCIDR, "alloc", "", "CIDR of IP address space to allocate within")
 	flag.StringVar(&apiPath, "api", "unix:///var/run/docker.sock", "Path to Docker API socket")

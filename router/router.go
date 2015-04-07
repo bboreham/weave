@@ -164,10 +164,13 @@ func (router *Router) handleCapturedPacket(frameData []byte, dec *EthernetDecode
 	frameCopy := make([]byte, frameLen, frameLen)
 	copy(frameCopy, frameData)
 
+	// If we don't know which peer corresponds to the dest MAC,
+	// broadcast it.
 	if !found {
 		router.Ourself.Broadcast(df, frameCopy, dec)
 		return
 	}
+
 	err := router.Ourself.Forward(dstPeer, df, frameCopy, dec)
 	if ftbe, ok := err.(FrameTooBigError); ok {
 		err = dec.sendICMPFragNeeded(ftbe.EPMTU, po.WritePacket)
@@ -347,8 +350,6 @@ func handleSpecialFrame(relayConn *LocalConnection, sender *net.UDPAddr, frame [
 
 // Gossiper methods - the Router is the topology Gossiper
 
-type PeerNameSet map[PeerName]bool
-
 type TopologyGossipData struct {
 	peers  *Peers
 	update PeerNameSet
@@ -357,14 +358,14 @@ type TopologyGossipData struct {
 func NewTopologyGossipData(peers *Peers, update ...*Peer) *TopologyGossipData {
 	names := make(PeerNameSet)
 	for _, p := range update {
-		names[p.Name] = true
+		names[p.Name] = void
 	}
 	return &TopologyGossipData{peers: peers, update: names}
 }
 
 func (d *TopologyGossipData) Merge(other GossipData) {
 	for name := range other.(*TopologyGossipData).update {
-		d.update[name] = true
+		d.update[name] = void
 	}
 }
 
@@ -376,31 +377,42 @@ func (router *Router) OnGossipUnicast(sender PeerName, msg []byte) error {
 	return fmt.Errorf("unexpected topology gossip unicast: %v", msg)
 }
 
-func (router *Router) OnGossipBroadcast(msg []byte) error {
-	return fmt.Errorf("unexpected topology gossip broadcast: %v", msg)
+func (router *Router) OnGossipBroadcast(update []byte) (GossipData, error) {
+	origUpdate, _, err := router.applyTopologyUpdate(update)
+	if err != nil || len(origUpdate) == 0 {
+		return nil, err
+	}
+	return &TopologyGossipData{peers: router.Peers, update: origUpdate}, nil
 }
 
 func (router *Router) Gossip() GossipData {
 	return &TopologyGossipData{peers: router.Peers, update: router.Peers.Names()}
 }
 
-func (router *Router) OnGossip(buf []byte) (GossipData, error) {
-	newUpdate, err := router.Peers.ApplyUpdate(buf)
+func (router *Router) OnGossip(update []byte) (GossipData, error) {
+	_, newUpdate, err := router.applyTopologyUpdate(update)
+	if err != nil || len(newUpdate) == 0 {
+		return nil, err
+	}
+	return &TopologyGossipData{peers: router.Peers, update: newUpdate}, nil
+}
+
+func (router *Router) applyTopologyUpdate(update []byte) (PeerNameSet, PeerNameSet, error) {
+	origUpdate, newUpdate, err := router.Peers.ApplyUpdate(update)
 	if _, ok := err.(UnknownPeerError); err != nil && ok {
 		// That update contained a reference to a peer which wasn't
 		// itself included in the update, and we didn't know about
 		// already. We ignore this; eventually we should receive an
 		// update containing a complete topology.
 		log.Println("Topology gossip:", err)
-		return nil, nil
+		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if len(newUpdate) == 0 {
-		return nil, nil
+	if len(newUpdate) > 0 {
+		router.ConnectionMaker.Refresh()
+		router.Routes.Recalculate()
 	}
-	router.ConnectionMaker.Refresh()
-	router.Routes.Recalculate()
-	return &TopologyGossipData{peers: router.Peers, update: newUpdate}, nil
+	return origUpdate, newUpdate, nil
 }
