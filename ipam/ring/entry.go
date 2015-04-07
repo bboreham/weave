@@ -21,6 +21,13 @@ func (e1 *entry) Equal(e2 *entry) bool {
 		e1.Tombstone == e2.Tombstone && e1.Version == e2.Version
 }
 
+func (e *entry) update(peername router.PeerName, free uint32) {
+	e.Peer = peername
+	e.Tombstone = 0
+	e.Version++
+	e.Free = free
+}
+
 // For compatibility with sort.Interface
 type entries []*entry
 
