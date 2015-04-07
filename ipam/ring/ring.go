@@ -141,7 +141,8 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	preceedingEntry--
 
 	utils.Assert(len(filteredEntries) > 0, "Cannot grant into an empty ring, as by definition you don't own anything.")
-	utils.Assert(filteredEntries.entry(preceedingEntry).Peer == r.Peername, "Trying to grant in a range I don't own")
+	previousLiveEntry := filteredEntries.entry(preceedingEntry)
+	utils.Assert(previousLiveEntry.Peer == r.Peername, "Trying to grant in a range I don't own")
 
 	// At the end, the check is a little trickier.  There is never an entry with
 	// a token of r.End, as the end of the ring is exclusive.  If we've asked to end == r.End,
@@ -154,8 +155,9 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 
 	// Either the next non-tombstone token is the end token, or the end token is between
 	// the current and the next.
+	nextLiveEntry := filteredEntries.entry(preceedingEntry + 1)
 	utils.Assert(filteredEntries.between(expectedNextToken, preceedingEntry, preceedingEntry+1) ||
-		filteredEntries.entry(preceedingEntry+1).Token == expectedNextToken,
+		nextLiveEntry.Token == expectedNextToken,
 		"Trying to grant spanning a token")
 
 	// ----------------- End of Checks -----------------
@@ -176,20 +178,10 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 		r.Entries.insert(entry{Token: start, Peer: peer, Free: r.distance(start, end)})
 	}
 
-	// Need to reset free space on previous (non-tombstone) entry.  We can do
-	// this in two cases - either we resurrected a tombstone entry (first branch
-	// of above if) or we added a new entry (else in above if).  In both cases we
-	// are guaranteed to we own preceedingEntry.  Note in the above if, the first
-	// branch also covers the case where we are giving up a token we own (as opposed to
-	// resurrecting a entry), in which case we are not guaranteed to own the previous entry.
-	// But in that case preceedingEntry is the entry we just updated, so it's harmless.
-	// preceedingEntry points to the first non-tombstone entry less than or equal to us,
-	// as that view doesn't include tombstones.
-	previous := filteredEntries.entry(preceedingEntry)
-	if previous.Token != start {
-		utils.Assert(previous.Peer == r.Peername, "I don't own you!")
-		previous.Free = r.distance(previous.Token, start)
-		previous.Version++
+	// Reset free space on previous (non-tombstone) entry, which we own.
+	if previousLiveEntry.Token != start {
+		previousLiveEntry.Free = r.distance(previousLiveEntry.Token, start)
+		previousLiveEntry.Version++
 	}
 
 	r.assertInvariants()
@@ -215,7 +207,6 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	// And the next live token after; This might not be the next token
 	// after, it might be the same, but that will just under-estimate free
 	// space, which will get corrected by calls to ReportFree.
-	nextLiveEntry := filteredEntries.entry(preceedingEntry + 1)
 	endFree := r.distance(expectedNextToken, nextLiveEntry.Token)
 
 	switch {
