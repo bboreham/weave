@@ -117,7 +117,7 @@ func TestElection(t *testing.T) {
 	alloc1.OnGossipBroadcast(alloc2.EncodeState())
 
 	// alloc2 receives the space request and replies
-	ExpectMessage(alloc2, ourNameString, msgGossip, nil)
+	ExpectMessage(alloc2, ourNameString, msgRingUpdate, nil)
 	alloc2.OnGossipUnicast(alloc1.ourName, router.Concat([]byte{msgSpaceRequest}, alloc1.EncodeState()))
 
 	// Now alloc1 receives the space donation

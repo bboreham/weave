@@ -18,10 +18,11 @@ const (
 	tombstoneTimeout = 14 * 24 * time.Hour
 )
 
+// Kinds of message we can unicast to other peers
 const (
 	msgSpaceRequest = iota
 	msgLeaderElected
-	msgGossip
+	msgRingUpdate
 )
 
 type pendingAllocation struct {
@@ -176,7 +177,7 @@ func (alloc *Allocator) donateSpace(to router.PeerName) {
 	// This serves to both tell him of any space we might
 	// have given him, or tell him where he might find some
 	// more.
-	defer alloc.sendRequest(to, msgGossip)
+	defer alloc.sendRequest(to, msgRingUpdate)
 
 	alloc.debugln("Peer", to, "asked me for space")
 	start, size, ok := alloc.spaceSet.GiveUpSpace()
