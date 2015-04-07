@@ -163,14 +163,8 @@ func testAllocator(t *testing.T, name string, universeCIDR string) *Allocator {
 	ourName, _ := router.PeerNameFromString(name)
 	alloc, _ := NewAllocator(ourName, universeCIDR)
 	alloc.gossip = &mockGossipComms{t: t, name: name}
-	alloc.startForTesting()
+	alloc.Start()
 	return alloc
-}
-
-func (alloc *Allocator) startForTesting() {
-	actionChan := make(chan func(), router.ChannelSize)
-	alloc.actionChan = actionChan
-	go alloc.actorLoop(actionChan, false)
 }
 
 // Async.

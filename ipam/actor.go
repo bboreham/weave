@@ -11,7 +11,7 @@ import (
 func (alloc *Allocator) Start() {
 	actionChan := make(chan func(), router.ChannelSize)
 	alloc.actionChan = actionChan
-	go alloc.actorLoop(actionChan, true)
+	go alloc.actorLoop(actionChan)
 }
 
 // Actor client API
@@ -185,8 +185,7 @@ func (alloc *Allocator) Claim(ident string, addr net.IP, cancelChan <-chan bool)
 
 // ACTOR server
 
-func (alloc *Allocator) actorLoop(actionChan <-chan func(), withTimers bool) {
-	// FIXME: not doing any timers at the moment.
+func (alloc *Allocator) actorLoop(actionChan <-chan func()) {
 	for {
 		select {
 		case action := <-actionChan:
