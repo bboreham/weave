@@ -37,7 +37,12 @@ func (alloc *Allocator) GetFor(ident string, cancelChan <-chan bool) net.IP {
 		return result
 	case <-cancelChan:
 		alloc.actionChan <- func() {
-			alloc.handleCancelGetFor(ident)
+			for i, pending := range alloc.pending {
+				if pending.Ident == ident {
+					alloc.pending = append(alloc.pending[:i], alloc.pending[i+1:]...)
+					break
+				}
+			}
 		}
 		return nil
 	}

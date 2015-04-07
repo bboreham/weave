@@ -138,15 +138,6 @@ func (alloc *Allocator) tryAllocateFor(ident string, resultChan chan<- net.IP) b
 	return false
 }
 
-func (alloc *Allocator) handleCancelGetFor(ident string) {
-	for i, pending := range alloc.pending {
-		if pending.Ident == ident {
-			alloc.pending = append(alloc.pending[:i], alloc.pending[i+1:]...)
-			break
-		}
-	}
-}
-
 func (alloc *Allocator) handleLeaderElected() error {
 	// some other peer decided we were the leader:
 	// if we already have tokens then they didn't get the memo; repeat
