@@ -23,7 +23,7 @@ usage() {
     echo "weave start      [<cidr> ...] <container_id>"
     echo "weave attach     [<cidr> ...] <container_id>"
     echo "weave detach     <cidr> [<cidr> ...] <container_id>"
-    echo "weave expose     <cidr>"
+    echo "weave expose     [<cidr>]"
     echo "weave hide       <cidr>"
     echo "weave ps"
     echo "weave status"
@@ -512,6 +512,31 @@ populate_ipam() {
     done
 }
 
+# If we don't already have any CIDRs passed from the command-line, get one from IPAM
+get_ipam_cidr() {
+    if [ -z $CIDR_ARGS ] ; then
+        # get the long form of the container ID
+        if ! status=$(docker inspect --format='{{.State.Running}} {{.Id}}' $1 2>/dev/null); then
+            echo "Error: No such container: $1" >&2
+            return 1
+        fi
+        case "$status" in
+            true*)
+                CONTAINER="${status#true }"
+                ;;
+            *)
+                echo "$1 container is not running." >&2
+                return 1
+                ;;
+        esac
+        CIDR_ARGS="$(http_call $CONTAINER_NAME $HTTP_PORT GET /ip/$CONTAINER)"
+        if [ "$CIDR_ARGS" = "404 page not found" ] ; then
+            echo "At least one CIDR is required on the command-line if IPAM has not been configured." >&2
+            return 1
+        fi
+    fi
+}
+
 # Check that a container named $1 with image $2 is not running
 check_not_running() {
     case $(docker inspect --format='{{.State.Running}} {{.Config.Image}}' $1 2>/dev/null) in
@@ -743,9 +768,7 @@ case "$COMMAND" in
         CONTAINER=$(docker run $DNS_ARGS -d "$@")
         if [ "$LOCAL" = "--local" ]; then
             create_bridge
-            if [ $CIDR_COUNT -eq 0 ] ; then
-                CIDR_ARGS="$(http_call $CONTAINER_NAME $HTTP_PORT GET /ip/$CONTAINER)"
-            fi
+            get_ipam_cidr $CONTAINER
             with_container_netns $CONTAINER attach $CIDR_ARGS >/dev/null
             tell_dns PUT $CONTAINER $CIDR_ARGS
         else
@@ -764,9 +787,7 @@ case "$COMMAND" in
         CONTAINER_ID="$1"
         create_bridge
         CONTAINER=$(docker start $CONTAINER_ID)
-        if [ $CIDR_COUNT -eq 0 ] ; then
-            CIDR_ARGS="$(http_call $CONTAINER_NAME $HTTP_PORT GET /ip/$CONTAINER)"
-        fi
+        get_ipam_cidr $CONTAINER
         with_container_netns $CONTAINER_ID attach $CIDR_ARGS >/dev/null
         tell_dns PUT $CONTAINER_ID $CIDR_ARGS
         echo $CONTAINER
@@ -776,10 +797,8 @@ case "$COMMAND" in
         collect_cidr_args "$@"
         shift $CIDR_COUNT
         CONTAINER_ID="$1"
-        if [ $CIDR_COUNT -eq 0 ] ; then
-            CIDR_ARGS="$(http_call $CONTAINER_NAME $HTTP_PORT GET /ip/$CONTAINER)"
-        fi
         create_bridge
+        get_ipam_cidr $CONTAINER_ID
         with_container_netns $CONTAINER_ID attach $CIDR_ARGS >/dev/null
         tell_dns PUT $CONTAINER_ID $CIDR_ARGS
         ;;
@@ -793,7 +812,7 @@ case "$COMMAND" in
         ;;
     expose)
         create_bridge --without-ethtool
-        [ $# -gt 0 ] || expose "$(http_call $CONTAINER_NAME $HTTP_PORT GET /ip/weave)"
+        [ $# -gt 0 ] || { get_ipam_cidr weave && expose $CIDR_ARGS ; }
         for CIDR; do
             validate_cidr $CIDR
             expose $CIDR
