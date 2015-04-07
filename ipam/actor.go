@@ -77,55 +77,6 @@ func (alloc *Allocator) ContainerDied(ident string) error {
 	return nil // this is to satisfy the ContainerObserver interface
 }
 
-// OnGossipUnicast (Sync)
-func (alloc *Allocator) OnGossipUnicast(sender router.PeerName, msg []byte) error {
-	alloc.debugln("OnGossipUnicast from", sender, ": ", len(msg), "bytes")
-	resultChan := make(chan error)
-	alloc.actionChan <- func() {
-		switch msg[0] {
-		case msgLeaderElected:
-			resultChan <- alloc.handleLeaderElected()
-		case msgSpaceRequest:
-			// some other peer asked us for space
-			alloc.donateSpace(sender)
-			resultChan <- nil
-		case msgGossip:
-			resultChan <- alloc.updateRing(msg[1:])
-		}
-	}
-	return <-resultChan
-}
-
-// OnGossipBroadcast (Sync)
-func (alloc *Allocator) OnGossipBroadcast(msg []byte) (router.GossipData, error) {
-	alloc.debugln("OnGossipBroadcast:", len(msg), "bytes")
-	resultChan := make(chan error)
-	alloc.actionChan <- func() {
-		resultChan <- alloc.updateRing(msg)
-	}
-	return alloc.Gossip(), <-resultChan
-}
-
-// Encode (Sync)
-func (alloc *Allocator) Encode() []byte {
-	resultChan := make(chan []byte)
-	alloc.actionChan <- func() {
-		resultChan <- alloc.ring.GossipState()
-	}
-	return <-resultChan
-}
-
-// OnGossip (Sync)
-func (alloc *Allocator) OnGossip(msg []byte) (router.GossipData, error) {
-	alloc.debugln("Allocator.OnGossip:", len(msg), "bytes")
-	resultChan := make(chan error)
-	alloc.actionChan <- func() {
-		resultChan <- alloc.updateRing(msg)
-	}
-	err := <-resultChan
-	return nil, err // for now, we never propagate updates. TBD
-}
-
 // OnShutdown (Sync)
 func (alloc *Allocator) Shutdown() {
 	alloc.infof("Shutdown")
@@ -147,7 +98,9 @@ func (alloc *Allocator) TombstonePeer(peer router.PeerName) error {
 	alloc.debugln("TombstonePeer:", peer)
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
-		resultChan <- alloc.tombstonePeer(peer)
+		err := alloc.ring.TombstonePeer(peer, tombstoneTimeout)
+		alloc.considerNewSpaces()
+		resultChan <- err
 	}
 	return <-resultChan
 }
@@ -156,7 +109,16 @@ func (alloc *Allocator) TombstonePeer(peer router.PeerName) error {
 func (alloc *Allocator) ListPeers() []router.PeerName {
 	resultChan := make(chan []router.PeerName)
 	alloc.actionChan <- func() {
-		resultChan <- alloc.listPeers()
+		peers := make(map[router.PeerName]bool)
+		for _, entry := range alloc.ring.Entries {
+			peers[entry.Peer] = true
+		}
+
+		result := make([]router.PeerName, 0, len(peers))
+		for peer := range peers {
+			result = append(result, peer)
+		}
+		resultChan <- result
 	}
 	return <-resultChan
 }

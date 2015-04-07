@@ -24,25 +24,6 @@ const (
 	msgGossip
 )
 
-// GossipData implementation is trivial - we always gossip the whole ring
-type ipamGossipData struct {
-	alloc *Allocator
-}
-
-func (d *ipamGossipData) Merge(other router.GossipData) {
-	// no-op
-}
-
-func (d *ipamGossipData) Encode() []byte {
-	return d.alloc.Encode()
-}
-
-// Gossip returns a GossipData implementation, which in this case alway
-// returns the latest ring state (and does nothing on merge)
-func (alloc *Allocator) Gossip() router.GossipData {
-	return &ipamGossipData{alloc}
-}
-
 type pendingAllocation struct {
 	resultChan chan<- net.IP
 	Ident      string
@@ -90,11 +71,6 @@ func NewAllocator(ourName router.PeerName, universeCIDR string) (*Allocator, err
 	return alloc, nil
 }
 
-// SetGossip gives the allocator an interface for talking to the outside world
-func (alloc *Allocator) SetGossip(gossip router.Gossip) {
-	alloc.gossip = gossip
-}
-
 func (alloc *Allocator) string() string {
 	var buf bytes.Buffer
 	buf.WriteString(fmt.Sprintf("Allocator universe %s+%d\n", alloc.universeStart, alloc.universeSize))
@@ -108,7 +84,7 @@ func (alloc *Allocator) string() string {
 	return buf.String()
 }
 
-func (alloc *Allocator) checkPending() {
+func (alloc *Allocator) checkPendingAllocations() {
 	i := 0
 	for ; i < len(alloc.pending); i++ {
 		if !alloc.tryAllocateFor(alloc.pending[i].Ident, alloc.pending[i].resultChan) {
@@ -121,7 +97,7 @@ func (alloc *Allocator) checkPending() {
 // Fairly quick check of what's going on; whether requests should now be
 // replied to, etc.
 func (alloc *Allocator) considerOurPosition() {
-	alloc.checkPending()
+	alloc.checkPendingAllocations()
 	alloc.checkClaims()
 }
 
@@ -137,7 +113,7 @@ func (alloc *Allocator) electLeaderIfNecessary() {
 		alloc.considerNewSpaces()
 		alloc.infof("I was elected leader of the universe\n%s", alloc.string())
 		alloc.gossip.GossipBroadcast(alloc.Gossip())
-		alloc.checkPending()
+		alloc.considerOurPosition()
 	} else {
 		alloc.sendRequest(leader, msgLeaderElected)
 	}
@@ -185,8 +161,6 @@ func (alloc *Allocator) handleLeaderElected() error {
 func (alloc *Allocator) sendRequest(dest router.PeerName, kind byte) {
 	msg := router.Concat([]byte{kind}, alloc.ring.GossipState())
 	alloc.gossip.GossipUnicast(dest, msg)
-	//req := &request{dest, kind, space, alloc.timeProvider.Now().Add(GossipReqTimeout)}
-	//alloc.inflight = append(alloc.inflight, req)
 }
 
 func (alloc *Allocator) updateRing(msg []byte) error {
@@ -264,26 +238,6 @@ func (alloc *Allocator) reportFreeSpace() {
 	for _, s := range spaces {
 		alloc.ring.ReportFree(s.Start, s.NumFreeAddresses())
 	}
-}
-
-func (alloc *Allocator) tombstonePeer(peer router.PeerName) error {
-	err := alloc.ring.TombstonePeer(peer, tombstoneTimeout)
-	alloc.considerNewSpaces()
-	alloc.assertInvariants()
-	return err
-}
-
-func (alloc *Allocator) listPeers() []router.PeerName {
-	peers := make(map[router.PeerName]bool)
-	for _, entry := range alloc.ring.Entries {
-		peers[entry.Peer] = true
-	}
-
-	result := make([]router.PeerName, 0, len(peers))
-	for peer := range peers {
-		result = append(result, peer)
-	}
-	return result
 }
 
 func (alloc *Allocator) errorln(args ...interface{}) {
