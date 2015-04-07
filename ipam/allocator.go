@@ -122,6 +122,11 @@ func (alloc *Allocator) electLeaderIfNecessary() {
 
 // return true if the request is completed, false if pending
 func (alloc *Allocator) tryAllocateFor(ident string, resultChan chan<- net.IP) bool {
+	// If we have previously stored an address for this container, return it.
+	if addrs, found := alloc.owned[ident]; found && len(addrs) > 0 {
+		resultChan <- addrs[0]
+		return true
+	}
 	if addr := alloc.spaceSet.Allocate(); addr != nil {
 		alloc.debugln("Allocated", addr, "for", ident)
 		alloc.addOwned(ident, addr)

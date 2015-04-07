@@ -25,10 +25,7 @@ func (alloc *Allocator) GetFor(ident string, cancelChan <-chan bool) net.IP {
 			return
 		}
 		alloc.electLeaderIfNecessary()
-		// If we have previously stored an address for this container, return it.
-		if addrs, found := alloc.owned[ident]; found && len(addrs) > 0 {
-			resultChan <- addrs[0]
-		} else if !alloc.tryAllocateFor(ident, resultChan) {
+		if !alloc.tryAllocateFor(ident, resultChan) {
 			alloc.pending = append(alloc.pending, pendingAllocation{resultChan, ident})
 		}
 	}
