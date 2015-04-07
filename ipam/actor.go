@@ -126,8 +126,8 @@ func (alloc *Allocator) OnGossip(msg []byte) (router.GossipData, error) {
 }
 
 // OnShutdown (Sync)
-func (alloc *Allocator) OnShutdown() {
-	alloc.debugln("OnShutdown")
+func (alloc *Allocator) Shutdown() {
+	alloc.infof("Shutdown")
 	doneChan := make(chan bool)
 	alloc.actionChan <- func() {
 		alloc.shuttingDown = true

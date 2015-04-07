@@ -83,7 +83,7 @@ func (alloc *Allocator) HandleHTTP(mux *http.ServeMux) {
 		}
 	})
 	mux.HandleFunc("/tombstone-self", func(w http.ResponseWriter, r *http.Request) {
-		alloc.OnShutdown()
+		alloc.Shutdown()
 	})
 	mux.HandleFunc("/peer", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {

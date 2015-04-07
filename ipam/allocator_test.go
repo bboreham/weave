@@ -232,7 +232,7 @@ func TestGossipShutdown(t *testing.T) {
 	wt.AssertEqualString(t, addr1.String(), testAddr1, "address")
 
 	ExpectBroadcastMessage(alloc, nil) // broadcasts state with tombstone
-	alloc.OnShutdown()
+	alloc.Shutdown()
 
 	addr2 := alloc.GetFor(container2, nil) // trying to allocate after shutdown should fail
 	wt.AssertEqualString(t, addr2.String(), "<nil>", "address")
