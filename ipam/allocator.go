@@ -190,7 +190,7 @@ func (alloc *Allocator) donateSpace(to router.PeerName) {
 }
 
 // considerNewSpaces iterates through ranges in the ring
-// and ensures we have spaces for them.  Its only ever adds
+// and ensures we have spaces for them.  It only ever adds
 // new spaces, as the invariants in the ring ensure we never
 // have spaces taken away from us against our will.
 func (alloc *Allocator) considerNewSpaces() {

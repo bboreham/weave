@@ -61,17 +61,11 @@ func (r *Ring) checkInvariants() error {
 	}
 
 	// Check no token appears twice
-	// We know its sorted...
-	var lastToken *uint32
-	for _, entry := range r.Entries {
-		if lastToken == nil {
-			lastToken = &entry.Token
-			continue
-		}
-		if *lastToken == entry.Token {
+	// We know it's sorted...
+	for i := 1; i < len(r.Entries); i++ {
+		if r.Entries[i-1].Token == r.Entries[i].Token {
 			return ErrTokenRepeated
 		}
-		lastToken = &entry.Token
 	}
 
 	if len(r.Entries) == 0 {
@@ -82,7 +76,6 @@ func (r *Ring) checkInvariants() error {
 	if r.Entries.entry(0).Token < r.Start {
 		return ErrTokenOutOfRange
 	}
-
 	if r.Entries.entry(-1).Token >= r.End {
 		return ErrTokenOutOfRange
 	}
