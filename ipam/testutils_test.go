@@ -64,7 +64,8 @@ func (m *mockGossipComms) String() string {
 // that the contents of messages are never re-ordered.  Which, for instance,
 // requires they are not based off iterating through a map.
 
-func (m *mockGossipComms) GossipBroadcast(buf []byte) error {
+func (m *mockGossipComms) GossipBroadcast(update router.GossipData) error {
+	buf := []byte{}
 	if len(m.messages) == 0 {
 		m.Fatalf("%s: Gossip broadcast message unexpected: \n%x", m.name, buf)
 	} else if msg := m.messages[0]; msg.dst != router.UnknownPeerName {
@@ -219,10 +220,10 @@ type TestGossipRouter struct {
 	loss        float32 // 0.0 means no loss
 }
 
-func (grouter *TestGossipRouter) GossipBroadcast(buf []byte) error {
+func (grouter *TestGossipRouter) GossipBroadcast(update router.GossipData) error {
 	for _, gossipChan := range grouter.gossipChans {
 		select {
-		case gossipChan <- gossipMessage{buf: buf}:
+		case gossipChan <- gossipMessage{buf: update.(*ipamGossipData).alloc.ring.GossipState()}:
 		default: // drop the message if we cannot send it
 		}
 	}
@@ -275,13 +276,13 @@ func (grouter *TestGossipRouter) connect(sender router.PeerName, gossiper router
 						panic(fmt.Sprintf("Error doing gossip unicast to %s: %s", sender, err))
 					}
 				} else {
-					err := gossiper.OnGossipBroadcast(message.buf)
+					_, err := gossiper.OnGossipBroadcast(message.buf)
 					if err != nil {
 						panic(fmt.Sprintf("Error doing gossip broadcast to %s: %s", sender, err))
 					}
 				}
 			case <-gossipTimer:
-				grouter.GossipBroadcast(gossiper.Gossip().Encode())
+				grouter.GossipBroadcast(gossiper.Gossip())
 			}
 		}
 	}()
@@ -303,8 +304,8 @@ func (client TestGossipRouterClient) GossipUnicast(dstPeerName router.PeerName, 
 	return nil
 }
 
-func (client TestGossipRouterClient) GossipBroadcast(buf []byte) error {
-	return client.router.GossipBroadcast(buf)
+func (client TestGossipRouterClient) GossipBroadcast(update router.GossipData) error {
+	return client.router.GossipBroadcast(update)
 }
 
 func makeNetworkOfAllocators(size int, cidr string) ([]*Allocator, TestGossipRouter) {
@@ -320,7 +321,7 @@ func makeNetworkOfAllocators(size int, cidr string) ([]*Allocator, TestGossipRou
 		allocs[i] = alloc
 	}
 
-	gossipRouter.GossipBroadcast(allocs[size-1].Encode())
+	gossipRouter.GossipBroadcast(allocs[size-1].Gossip())
 	time.Sleep(1000 * time.Millisecond)
 	return allocs, gossipRouter
 }

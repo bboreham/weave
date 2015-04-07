@@ -96,13 +96,13 @@ func (alloc *Allocator) OnGossipUnicast(sender router.PeerName, msg []byte) erro
 }
 
 // OnGossipBroadcast (Sync)
-func (alloc *Allocator) OnGossipBroadcast(msg []byte) error {
+func (alloc *Allocator) OnGossipBroadcast(msg []byte) (router.GossipData, error) {
 	alloc.debugln("OnGossipBroadcast:", len(msg), "bytes")
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
 		resultChan <- alloc.updateRing(msg)
 	}
-	return <-resultChan
+	return alloc.Gossip(), <-resultChan
 }
 
 // Encode (Sync)
@@ -132,7 +132,7 @@ func (alloc *Allocator) OnShutdown() {
 	alloc.actionChan <- func() {
 		alloc.shuttingDown = true
 		alloc.ring.TombstonePeer(alloc.ourName, 100)
-		alloc.gossip.GossipBroadcast(alloc.ring.GossipState())
+		alloc.gossip.GossipBroadcast(alloc.Gossip())
 		alloc.spaceSet.Clear()
 		time.Sleep(100 * time.Millisecond)
 		doneChan <- true

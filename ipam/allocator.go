@@ -136,7 +136,7 @@ func (alloc *Allocator) electLeaderIfNecessary() {
 		alloc.ring.ClaimItAll()
 		alloc.considerNewSpaces()
 		alloc.infof("I was elected leader of the universe\n%s", alloc.string())
-		alloc.gossip.GossipBroadcast(alloc.ring.GossipState())
+		alloc.gossip.GossipBroadcast(alloc.Gossip())
 		alloc.checkPending()
 	} else {
 		alloc.sendRequest(leader, msgLeaderElected)
@@ -174,7 +174,7 @@ func (alloc *Allocator) handleLeaderElected() error {
 	// some other peer decided we were the leader:
 	// if we already have tokens then they didn't get the memo; repeat
 	if !alloc.ring.Empty() {
-		alloc.gossip.GossipBroadcast(alloc.ring.GossipState())
+		alloc.gossip.GossipBroadcast(alloc.Gossip())
 	} else {
 		// re-run the election here to avoid races
 		alloc.electLeaderIfNecessary()
