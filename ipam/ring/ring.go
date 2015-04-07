@@ -7,23 +7,15 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
-	"expvar"
 	"fmt"
 	"math/rand"
 	"net"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/zettio/weave/common"
 	"github.com/zettio/weave/ipam/utils"
 	"github.com/zettio/weave/router"
-)
-
-var (
-	expRingSize       = expvar.NewMap("ipam.ringSize")
-	expRingEntries    = expvar.NewMap("ipam.ringEntries")
-	expRingTombstones = expvar.NewMap("ipam.ringTombstones")
 )
 
 // Ring represents the ring itself
@@ -93,25 +85,6 @@ func (r *Ring) checkInvariants() error {
 	}
 
 	return nil
-}
-
-type _int int
-
-func (i _int) String() string {
-	return strconv.Itoa(int(i))
-}
-
-type _uint32 uint32
-
-func (i _uint32) String() string {
-	return strconv.FormatUint(uint64(i), 10)
-}
-
-func (r *Ring) updateExportedVariables() {
-	ringName := utils.IntIP4(r.Start).String()
-	expRingSize.Set(ringName, _uint32(r.End-r.Start))
-	expRingEntries.Set(ringName, _int(len(r.Entries)))
-	expRingTombstones.Set(ringName, _int(len(r.Entries)-len(r.Entries.filteredEntries())))
 }
 
 // New creates an empty ring belonging to peer.
