@@ -47,10 +47,7 @@ func (s *Set) AddSpace(newspace Space) {
 	s.assertInvariants()
 	defer s.assertInvariants()
 
-	i := sort.Search(len(s.spaces), func(j int) bool {
-		return utils.IP4int(s.spaces[j].Start) >= utils.IP4int(newspace.Start)
-	})
-
+	i := s.find(newspace.Start)
 	utils.Assert(i >= len(s.spaces) || !s.spaces[i].Start.Equal(newspace.Start), "inserting space into list already exists!")
 
 	s.spaces = append(s.spaces, &Space{}) // make space
@@ -63,16 +60,19 @@ func (s *Set) Clear() {
 	s.spaces = s.spaces[:0]
 }
 
+// Return the position of the space at or above start
+func (s *Set) find(start net.IP) int {
+	return sort.Search(len(s.spaces), func(j int) bool {
+		return utils.IP4int(s.spaces[j].Start) >= utils.IP4int(start)
+	})
+}
+
 // Get returns the space found at start.
 func (s *Set) Get(start net.IP) (*Space, bool) {
-	// TODO consider keeping s.spaces sorted to make this
-	// quicker.
-	for _, space := range s.spaces {
-		if space.Start.Equal(start) {
-			return space, true
-		}
+	i := s.find(start)
+	if i < len(s.spaces) && s.spaces[i].Start.Equal(start) {
+		return s.spaces[i], true
 	}
-
 	return nil, false
 }
 

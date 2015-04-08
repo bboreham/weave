@@ -347,7 +347,7 @@ type Range struct {
 	Start, End net.IP // [Start, End) of range I own
 }
 
-// OwnedRanges returns slice of Ranges indicating which
+// OwnedRanges returns slice of Ranges, ordered by IP, indicating which
 // ranges are owned by this peer.  Will split ranges which
 // span 0 in the ring.
 func (r *Ring) OwnedRanges() []Range {
