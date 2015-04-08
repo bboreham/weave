@@ -34,17 +34,16 @@ func (r *Ring) assertInvariants() {
 
 // Errors returned by merge
 var (
-	ErrNotSorted               = errors.New("Ring not sorted")
-	ErrTokenRepeated           = errors.New("Token appears twice in ring")
-	ErrTokenOutOfRange         = errors.New("Token is out of range")
-	ErrDifferentSubnets        = errors.New("Cannot merge gossip for different subnet!")
-	ErrNewerVersion            = errors.New("Received new version for entry I own!")
-	ErrInvalidEntry            = errors.New("Received invalid state update!")
-	ErrEntryInMyRange          = errors.New("Received new entry in my range!")
-	ErrNoFreeSpace             = errors.New("No free space found!")
-	ErrTooMuchFreeSpace        = errors.New("Entry reporting too much free space!")
-	ErrCannotTombstoneYourself = errors.New("Cannot tombstone yourself")
-	ErrInvalidTimeout          = errors.New("dt must be greater than 0")
+	ErrNotSorted        = errors.New("Ring not sorted")
+	ErrTokenRepeated    = errors.New("Token appears twice in ring")
+	ErrTokenOutOfRange  = errors.New("Token is out of range")
+	ErrDifferentSubnets = errors.New("Cannot merge gossip for different subnet!")
+	ErrNewerVersion     = errors.New("Received new version for entry I own!")
+	ErrInvalidEntry     = errors.New("Received invalid state update!")
+	ErrEntryInMyRange   = errors.New("Received new entry in my range!")
+	ErrNoFreeSpace      = errors.New("No free space found!")
+	ErrTooMuchFreeSpace = errors.New("Entry reporting too much free space!")
+	ErrInvalidTimeout   = errors.New("dt must be greater than 0")
 )
 
 func (r *Ring) checkInvariants() error {
@@ -337,9 +336,7 @@ func (r *Ring) GossipState() []byte {
 	return buf.Bytes()
 }
 
-// Empty returns true if the ring has no entries
-// Function does not consider tombstones, so result will
-// be true if you delete every node from the ring.
+// Empty returns true if the ring has no live entries (may contain tombstones)
 func (r *Ring) Empty() bool {
 	return len(r.Entries.filteredEntries()) == 0
 }
@@ -360,8 +357,6 @@ func (r *Ring) OwnedRanges() []Range {
 	)
 	r.assertInvariants()
 
-	// Finally iterate through entries again
-	// filling in result as we go.
 	for i, entry := range entries {
 		if entry.Peer != r.Peername {
 			continue
