@@ -167,16 +167,11 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 
 	// ----------------- End of Checks -----------------
 
-	// Look for the start entry (in the real ring this time, i.e. could be a tombstone)
-	i := sort.Search(len(r.Entries), func(j int) bool {
-		return r.Entries[j].Token >= start
-	})
-
 	// Is there already a token at start? in which case we need
 	// to change the owner and update version
 	// Note we don't need to check ownership; we did that above.
-	if i < len(r.Entries) && r.Entries[i].Token == start {
-		r.Entries.entry(i).update(peer, length)
+	if startEntry, found := r.Entries.get(start); found {
+		startEntry.update(peer, length)
 	} else {
 		// Otherwise, these isn't a token here, insert a new one.
 		// Checks have already ensured we own this range.
