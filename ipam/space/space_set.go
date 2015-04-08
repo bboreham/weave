@@ -19,7 +19,7 @@ func (s Set) Len() int { return len(s.spaces) }
 func (s Set) Less(i, j int) bool {
 	return utils.IP4int(s.spaces[i].Start) < utils.IP4int(s.spaces[j].Start)
 }
-func (s Set) Swap(i, j int) { panic("Should never be swapping entries!") }
+func (s Set) Swap(i, j int) { panic("Should never be swapping spaces!") }
 
 // Spaces returns the list of spaces in this space set.
 func (s *Set) Spaces() []*Space {
