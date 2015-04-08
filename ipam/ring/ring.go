@@ -110,11 +110,13 @@ func (r *Ring) distance(start, end uint32) uint32 {
 // GrantRangeToHost modifies the ring such that range [start, end)
 // is assigned to peer.  This may insert up to two new tokens.
 // Note, due to wrapping, end can be less than start
+
 func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	//fmt.Printf("%s GrantRangeToHost [%v,%v) -> %s\n", r.Peername, startIP, endIP, peer)
 
 	var (
 		start, end = utils.IP4int(startIP), utils.IP4int(endIP)
+		length     = r.distance(start, end)
 	)
 
 	r.assertInvariants()
@@ -126,7 +128,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	utils.Assert(r.Start <= start && start < r.End, "Trying to grant range outside of subnet")
 	utils.Assert(r.Start < end && end <= r.End, "Trying to grant range outside of subnet")
 	utils.Assert(len(r.Entries) > 0, "Cannot grant if ring is empty!")
-	utils.Assert(r.distance(start, end) > 0, "Cannot create zero-sized ranges")
+	utils.Assert(length > 0, "Cannot create zero-sized ranges")
 
 	// A note re:TOMBSTONES - this is tricky, as we need to do our checks on a
 	// view of the ring minus tombstones (new ranges can span tombstoned entries),
@@ -148,16 +150,15 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	// a token of r.End, as the end of the ring is exclusive.  If we've asked to end == r.End,
 	// we actually want an entry with a token of r.Start - it might exist, or we
 	// might need to insert it.
-	expectedNextToken := end
-	if expectedNextToken == r.End {
-		expectedNextToken = r.Start
+	if end == r.End {
+		end = r.Start
 	}
 
 	// Either the next non-tombstone token is the end token, or the end token is between
 	// the current and the next.
 	nextLiveEntry := filteredEntries.entry(preceedingEntry + 1)
-	utils.Assert(filteredEntries.between(expectedNextToken, preceedingEntry, preceedingEntry+1) ||
-		nextLiveEntry.Token == expectedNextToken,
+	utils.Assert(filteredEntries.between(end, preceedingEntry, preceedingEntry+1) ||
+		nextLiveEntry.Token == end,
 		"Trying to grant spanning a token")
 
 	// ----------------- End of Checks -----------------
@@ -171,11 +172,11 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	// to change the owner and update version
 	// Note we don't need to check ownership; we did that above.
 	if i < len(r.Entries) && r.Entries[i].Token == start {
-		r.Entries.entry(i).update(peer, r.distance(start, end))
+		r.Entries.entry(i).update(peer, length)
 	} else {
 		// Otherwise, these isn't a token here, insert a new one.
 		// Checks have already ensured we own this range.
-		r.Entries.insert(entry{Token: start, Peer: peer, Free: r.distance(start, end)})
+		r.Entries.insert(entry{Token: start, Peer: peer, Free: length})
 	}
 
 	// Reset free space on previous (non-tombstone) entry, which we own.
@@ -202,27 +203,27 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	//           We checked at the top for this case.
 
 	// Now looks for the the entry with the end token
-	endEntry, found := r.Entries.get(expectedNextToken)
+	endEntry, found := r.Entries.get(end)
 
 	// And the next live token after; This might not be the next token
 	// after, it might be the same, but that will just under-estimate free
 	// space, which will get corrected by calls to ReportFree.
-	endFree := r.distance(expectedNextToken, nextLiveEntry.Token)
+	endFree := r.distance(end, nextLiveEntry.Token)
 
 	switch {
 	// Case i(a) - there is already token at the end, and its not a tombstone
-	case found && endEntry.Token == expectedNextToken && endEntry.Tombstone == 0:
+	case found && endEntry.Tombstone == 0:
 		return // do nothing; that was easy
 
 	// Case i(b) - there is already token at the end, buts its a tombstone
-	case found && endEntry.Token == expectedNextToken && endEntry.Tombstone > 0:
+	case found && endEntry.Tombstone > 0:
 		endEntry.update(r.Peername, endFree)
 		return
 
 	// Case ii & iii
 	default:
 		utils.Assert(!found, "WTF")
-		r.Entries.insert(entry{Token: expectedNextToken, Peer: r.Peername, Free: endFree})
+		r.Entries.insert(entry{Token: end, Peer: r.Peername, Free: endFree})
 	}
 }
 
