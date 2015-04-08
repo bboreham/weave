@@ -27,12 +27,8 @@ func (s *Set) Spaces() []*Space {
 }
 
 func (s *Set) String() string {
-	return s.describe("Set ")
-}
-
-func (s *Set) describe(heading string) string {
 	var buf bytes.Buffer
-	buf.WriteString(heading)
+	buf.WriteString("Set")
 	for _, space := range s.spaces {
 		buf.WriteString(fmt.Sprintf("\n  %s", space))
 	}
@@ -195,16 +191,6 @@ func (s *Set) Free(addr net.IP) error {
 	}
 	lg.Debug.Println("Address", addr, "not in range", s)
 	return fmt.Errorf("IP %s address not in range", addr)
-}
-
-// check if this Set Owns the given address
-func (s *Set) Owns(addr net.IP) bool {
-	for _, space := range s.spaces {
-		if space.contains(addr) {
-			return true
-		}
-	}
-	return false
 }
 
 // Claim an address that we think we should own
