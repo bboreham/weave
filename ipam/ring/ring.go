@@ -111,6 +111,11 @@ func (r *Ring) distance(start, end uint32) uint32 {
 // is assigned to peer.  This may insert up to two new tokens.
 // Note, due to wrapping, end can be less than start
 
+// Preconditions:
+// - startIP < endIP
+// - [start, end) must be owned by the calling peer
+// - there must not be any live tokens in the range
+
 func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 	//fmt.Printf("%s GrantRangeToHost [%v,%v) -> %s\n", r.Peername, startIP, endIP, peer)
 
@@ -148,8 +153,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 
 	// At the end, the check is a little trickier.  There is never an entry with
 	// a token of r.End, as the end of the ring is exclusive.  If we've asked to end == r.End,
-	// we actually want an entry with a token of r.Start - it might exist, or we
-	// might need to insert it.
+	// we actually want an entry with a token of r.Start
 	if end == r.End {
 		end = r.Start
 	}
@@ -163,7 +167,7 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 
 	// ----------------- End of Checks -----------------
 
-	// Look for the start entry (in the real ring this time, ie could be a tombstone)
+	// Look for the start entry (in the real ring this time, i.e. could be a tombstone)
 	i := sort.Search(len(r.Entries), func(j int) bool {
 		return r.Entries[j].Token >= start
 	})
@@ -187,40 +191,32 @@ func (r *Ring) GrantRangeToHost(startIP, endIP net.IP, peer router.PeerName) {
 
 	r.assertInvariants()
 
-	// Now we need to deal with the end token.  There are 5 cases:
-	//   ia.  the next token is equal to the end of the range, and is not a tombstone
+	// look for the the entry with the end token
+	endEntry, found := r.Entries.get(end)
+
+	// Compute free space: nextLiveEntry might not be the next token
+	// after, it might be the same as end, but that will just under-estimate free
+	// space, which will get corrected by calls to ReportFree.
+	endFree := r.distance(end, nextLiveEntry.Token)
+
+	// Now we need to deal with the end token.  There are 4 possible cases.
+	switch {
+	//  Case i(a).  there is a token equal to the end of the range, and it's not a tombstone
 	//        => we don't need to do anything
-	//   ib.  the next token is equal to the end of the range, but is a tombstone
+	case found && endEntry.Tombstone == 0:
+		return
+
+	//  Case i(b).  there is a token equal to the end of the range, but it is a tombstone
 	//        => resurrect it for this host, increment version number.
+	case found && endEntry.Tombstone > 0:
+		endEntry.update(r.Peername, endFree)
+		return
+
 	//   ii.  the end is between this token and the next,
 	//        => we need to insert a token such that we claim this bit on the end.
 	//   iii. the end is not between this token and next, but the intervening tokens
 	//        are all tombstones.
 	//        => this is fine, insert away - no need to check, we did that already
-	//   iv.  the end is not between this token and next, and there is a non-tombstone in
-	//        the way.
-	//        => this is an error, we'll be splitting someone else's ranges.
-	//           We checked at the top for this case.
-
-	// Now looks for the the entry with the end token
-	endEntry, found := r.Entries.get(end)
-
-	// And the next live token after; This might not be the next token
-	// after, it might be the same, but that will just under-estimate free
-	// space, which will get corrected by calls to ReportFree.
-	endFree := r.distance(end, nextLiveEntry.Token)
-
-	switch {
-	// Case i(a) - there is already token at the end, and its not a tombstone
-	case found && endEntry.Tombstone == 0:
-		return // do nothing; that was easy
-
-	// Case i(b) - there is already token at the end, buts its a tombstone
-	case found && endEntry.Tombstone > 0:
-		endEntry.update(r.Peername, endFree)
-		return
-
-	// Case ii & iii
 	default:
 		utils.Assert(!found, "WTF")
 		r.Entries.insert(entry{Token: end, Peer: r.Peername, Free: endFree})
