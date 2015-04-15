@@ -69,6 +69,7 @@ In more detail:
   - For the purpose of range ownership, tombstones are ignored - ie
     ranges extend past tombstones.
   - Tombstones are only inserted by an administrative action (see below)
+  - Tombstones expire and are removed from the ring after two weeks.
 - The data gossiped about the ring also includes the amount of free
   space in each range: this is not essential but it improves the
   selection of which node to ask for space.
@@ -157,40 +158,25 @@ network.
 
 ## Data Structures
 
-Everything is hung off Allocator, which runs as a single-threaded
-Actor, so no locks are used around data structures.
-
-The top-level Allocator holds two main data structures:
-
-### Ring
-
-This is the CRDT holding the map of address ranges to peers via
-tokens.
-
-### Space
-
-Package `space` holds detailed information on address ranges owned by this peer.
-
-Operations on addresses, such as deciding whether one address is
-within a space, are done by converting the 4-byte IP address into a
-4-byte unsigned integer and then doing ordinary arithmetic on that
-integer.
-
-The operation to Split() one space into two, to give space to another
-Peer, is conceptually simple but the implementation is fiddly to
-maintain the various lists and limits within MutableSpace. Perhaps a
-different free-list implementation would make this easier.
-
 ### Allocator
+
+Allocator runs as a single-threaded Actor, so no locks are used around
+data structures.
 
 We need to be able to release any allocations when a container dies, so
 Allocator retains a list of those, in a map `owned` indexed by container ID.
 
 When we run out of free addresses we ask another peer to donate space
 and wait for it to get back to us, so we have a list of outstanding
-'get' requests.  There is also a list recording outstanding claims of
+'getfor' requests.  There is also a list recording pending claims of
 specific addresses; currently this is only needed until we hear of
-some ownership on the ring.
+some ownership on the ring. These are implemented via a common
+'operation' interface, although the slightly different semantics
+requires us to hold them separately.
+
+Conceptually, Allocator is separate from the hosting Weave process and
+its link to the outside world is via its `gossip` and `leadership`
+interfaces.
 
 
 ## Future work
@@ -226,3 +212,8 @@ periodic gossip). This means we may send out requests more frequently
 than required, but this is innoccuous and it keeps things simple.  It
 is possible for nothing to happen, e.g. if everyone else has
 disconnected.  We could have a timer to re-consider things.
+
+The operation to Split() one space into two, to give space to another
+Peer, is conceptually simple but the implementation is fiddly to
+maintain the various lists and limits within MutableSpace. Perhaps a
+different free-list implementation would make this easier.
