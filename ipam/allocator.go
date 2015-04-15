@@ -25,6 +25,8 @@ const (
 	msgRingUpdate
 )
 
+// operation represents something which Allocator wants to do, but
+// which may need to wait until some other message arrives.
 type operation interface {
 	// Try attempts this operations and returns false if needs to be tried again.
 	Try(alloc *Allocator) bool
@@ -38,18 +40,18 @@ type operation interface {
 type Allocator struct {
 	actionChan         chan<- func()
 	ourName            router.PeerName
-	otherPeerNicknames map[router.PeerName]string
 	universeStart      net.IP
 	universeSize       uint32
 	universeLen        int        // length of network prefix (e.g. 24 for a /24 network)
 	ring               *ring.Ring // it's for you!
 	spaceSet           space.Set
-	owned              map[string][]net.IP // who owns what address, indexed by container-ID
+	owned              map[string][]net.IP        // who owns what address, indexed by container-ID
+	otherPeerNicknames map[router.PeerName]string // so we can map nicknames for tombstoning
 	pendingGetFors     []operation
 	pendingClaims      []operation
 	gossip             router.Gossip
 	leadership         router.Leadership
-	shuttingDown       bool
+	shuttingDown       bool // to avoid doing any requests while trying to tombstone ourself
 }
 
 // NewAllocator creates and initialises a new Allocator
@@ -108,7 +110,7 @@ func (alloc *Allocator) doOperation(op operation, ops *[]operation) error {
 	return nil
 }
 
-// Given an operaion, remove it form the pending queue
+// Given an operation, remove it from the pending queue
 //  Note the op may not be on the queue; it may have
 //  already succeeded.  If it is on the queue, we call
 //  cancel on it, allowing callers waiting for the resultChans
@@ -252,7 +254,7 @@ func (alloc *Allocator) Shutdown() {
 }
 
 // TombstonePeer (Sync) - inserts tombstones for given peer, freeing up the ranges the
-// peer owns.  Eventually the peer will go away.
+// peer owns.  Only done on adminstrator command.
 func (alloc *Allocator) TombstonePeer(peerNameOrNickname string) error {
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
