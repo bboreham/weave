@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"github.com/davecheney/profile"
 	"github.com/gorilla/mux"
+	"github.com/weaveworks/weave/common/updater"
+	"github.com/weaveworks/weave/ipam"
 	weavenet "github.com/weaveworks/weave/net"
 	weave "github.com/weaveworks/weave/router"
 	"log"
@@ -47,6 +49,8 @@ func main() {
 		peers       []string
 		bufSzMB     int
 		httpAddr    string
+		allocCIDR   string
+		apiPath     string
 	)
 
 	flag.BoolVar(&justVersion, "version", false, "print version and exit")
@@ -61,6 +65,8 @@ func main() {
 	flag.IntVar(&config.ConnLimit, "connlimit", 30, "connection limit (0 for unlimited)")
 	flag.IntVar(&bufSzMB, "bufsz", 8, "capture buffer size in MB")
 	flag.StringVar(&httpAddr, "httpaddr", fmt.Sprintf(":%d", weave.HTTPPort), "address to bind HTTP interface to (disabled if blank, absolute path indicates unix domain socket)")
+	flag.StringVar(&allocCIDR, "alloc", "", "CIDR of IP address space to allocate within")
+	flag.StringVar(&apiPath, "api", "unix:///var/run/docker.sock", "Path to Docker API socket")
 	flag.Parse()
 	peers = flag.Args()
 
@@ -124,7 +130,12 @@ func main() {
 	router.Start()
 	initiateConnections(router, peers)
 	if httpAddr != "" {
-		go handleHTTP(router, httpAddr)
+		if allocCIDR != "" {
+			allocator := createAllocator(router, apiPath, allocCIDR)
+			go handleHTTP(router, httpAddr, allocator)
+		} else {
+			go handleHTTP(router, httpAddr)
+		}
 	}
 	handleSignals(router)
 }
@@ -163,7 +174,25 @@ func initiateConnections(router *weave.Router, peers []string) {
 	}
 }
 
-func handleHTTP(router *weave.Router, httpAddr string) {
+func createAllocator(router *weave.Router, apiPath string, allocCIDR string) *ipam.Allocator {
+	allocator, err := ipam.NewAllocator(router.Ourself.Peer.Name, allocCIDR)
+	if err != nil {
+		log.Fatal(err)
+	}
+	allocator.SetInterfaces(router.NewGossip("IPallocation", allocator), router.Peers)
+	allocator.Start()
+	allocator.HandleHTTP(http.DefaultServeMux)
+	err = updater.Start(apiPath, allocator)
+	if err != nil {
+		log.Fatal("Unable to start watcher", err)
+	}
+	router.Peers.AddNewPeerFunc(func(peer *weave.Peer) {
+		allocator.OnNewPeer(peer.Name, peer.NickName)
+	})
+	return allocator
+}
+
+func handleHTTP(router *weave.Router, httpAddr string, others ...interface{}) {
 	encryption := "off"
 	if router.UsingPassword() {
 		encryption = "on"
@@ -175,6 +204,9 @@ func handleHTTP(router *weave.Router, httpAddr string) {
 		fmt.Fprintln(w, "weave router", version)
 		fmt.Fprintln(w, "Encryption", encryption)
 		fmt.Fprintln(w, router.Status())
+		for _, x := range others {
+			fmt.Fprintln(w, x)
+		}
 	})
 
 	muxRouter.Methods("GET").Path("/status-json").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

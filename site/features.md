@@ -9,6 +9,7 @@ Weave has a few more features beyond those illustrated by the [basic
 example](https://github.com/weaveworks/weave#example):
 
  * [Virtual ethernet switch](#virtual-ethernet-switch)
+ * [IP Address Management](#ipam)
  * [Application isolation](#application-isolation)
  * [Dynamic network attachment](#dynamic-network-attachment)
  * [Security](#security)
@@ -52,6 +53,38 @@ and troubleshoot our container network. To put it another way, we can
 now re-use the same tools and techniques when deploying applications
 as containers as we would have done when deploying them 'on metal' in
 our data centre.
+
+### <a name="ipam"></a>IP Address Management
+
+Weave can assign unique IP addresses to each container across the
+network.  To make this work, weave must be told what range of
+addresses to allocate from, for example:
+
+    host1# weave launch -alloc 10.2.3.0/24
+
+The `run`, `start`, `attach` and `expose` commands will then allocate
+an address automatically if none is specified, i.e.:
+
+    host1# D=$(weave run -t -i ubuntu)
+
+Weave uses the Docker Events API to learn when a container has exited
+and hence can release its IP address.
+
+You must specify the same range with `-alloc` on each host, and you
+cannot mix weaves started with and without -alloc.
+
+You may wish to `weave stop` and re-launch to change some config or to
+upgrade to a new version; provided the underlying protocol hasn't
+changed it will pick up where it left off and learn from peers in the
+network which address ranges it was previously using. If, however, you
+run `weave reset` this will remove the peer from the network so
+if Weave is run again on that node it will start from scratch.
+
+For failed peers, the `weave rmpeer` command can be used to permanently
+remove the ranges allocated to said peer.  This will allow other peers
+to allocate IPs in the ranges previously owner by the rm'd peer, and as such
+should be used with extreme caution - if the rm'd peer later rejoins
+the Weave network, the same IP address may be allocated twice.
 
 ### <a name="application-isolation"></a>Application isolation
 
