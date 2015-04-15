@@ -71,7 +71,7 @@ In more detail:
   - Tombstones are only inserted by an administrative action (see below)
 - The data gossiped about the ring also includes the amount of free
   space in each range: this is not essential but it improves the
-  selection of nodes to ask for space.
+  selection of which node to ask for space.
 
 ### The allocator
 
@@ -105,51 +105,33 @@ In more detail:
 Nodes are told the universe - the IP range from which all allocations
 are made - when starting up.  Each node must be given the same range.
 
-We deal with concurrent start-up through a process of leader election.
-In essence, the node with the highest id claims the entire universe for
-itself, and then other nodes can begin to request ranges from it.
+At start-up, nobody owns any address range.  We deal with concurrent
+start-up through a process of leader election.  In essence, the node
+with the highest id claims the entire universe for itself, and then
+other nodes can begin to request ranges from it.  An election is
+triggered by some peer being asked to allocate or claim an address.
 
-When a node starts up, it initialises the CRDT to just an empty
-ring. It then waits for ring updates and/or commands.  Until a node
-receives a command to allocate or claim an IP address, it does not
-care what else is going on, but it does need to keep track of it.
+If a peer elects itself as leader, then it can respond to the request
+directly.
 
-When a node first receives such a command, it consults its map. If it
-sees any other nodes that *do* claim to have some tokens, then it
-proceeds with normal allocation [see above]. Otherwise, if no such
-update has been received (i.e. we've either received no update or only
-updates with an empty ring), then the node starts a leader election.
-If this node has the highest id, then the node claims the entire
-universe for itself, inserting one token at the beginning of the ring,
-and broadcasts the ring.
+However, if the election is won by some different peer, then the peer
+that has the request must wait until the leader takes control before
+it can request space.
 
-If it sees that another node has the highest ID, it sends a message to
-that node proposing that it be leader.  A node receiving such a
-message proceeds as above: only if it sees no other nodes with tokens
-and it sees itself as the node with the highest ID does it take
-charge.
-
-Note that the chosen leader can be a node other than the one with the
-overall highest id. This happens in the event a node with a higher id
-starts up just as another node has made the decision to become
-leader. That is ok, as long as the new node hasn't already run its own
-leader election.
+The peer that triggered the election sends a message to the peer it
+has elected.  That peer then re-runs the election, to avoid races
+where further peers have joined the group and come to a different
+conclusion.
 
 Failures:
 - two nodes that haven't communicated with each other yet can each
   decide to be leader
   -> this is a fundamental problem: if you don't know about someone
      else then you cannot make allowances for them.
-     [To improve matters, nodes could wait for a bit to see if more
-     peers arrive before running an election.  Also, we could look at
-     the command-line parameters supplied to Weave, and wait longer in
-     the case that we have been asked to connect to someone specific.]
 - prospective leader dies before sending map
   -> This failure will be detected by the underlying Weave peer
      topology. The node requiring space will re-try, re-running the
      leadership election across all connected peers.
-     [Currently, re-try is triggered by gossip arriving, or another
-     command.  It is possible for neither to happen.]
 
 ## Node shutdown
 
@@ -169,5 +151,78 @@ Failures:
 To cope with the situation where a node has left or died without
 managing to tell its peers, an administrator may go to any other node
 and command that it mark the dead node's tokens as tombstones (with
-the `weave rmpeer` command).  This information will then be gossipped
-out to the network.
+`weave rmpeer`).  This information will then be gossipped out to the
+network.
+
+
+## Data Structures
+
+Everything is hung off Allocator, which runs as a single-threaded
+Actor, so no locks are used around data structures.
+
+The top-level Allocator holds two main data structures:
+
+### Ring
+
+This is the CRDT holding the map of address ranges to peers via
+tokens.
+
+### Space
+
+Package `space` holds detailed information on address ranges owned by this peer.
+
+Operations on addresses, such as deciding whether one address is
+within a space, are done by converting the 4-byte IP address into a
+4-byte unsigned integer and then doing ordinary arithmetic on that
+integer.
+
+The operation to Split() one space into two, to give space to another
+Peer, is conceptually simple but the implementation is fiddly to
+maintain the various lists and limits within MutableSpace. Perhaps a
+different free-list implementation would make this easier.
+
+### Allocator
+
+We need to be able to release any allocations when a container dies, so
+Allocator retains a list of those, in a map `owned` indexed by container ID.
+
+When we run out of free addresses we ask another peer to donate space
+and wait for it to get back to us, so we have a list of outstanding
+'get' requests.  There is also a list recording outstanding claims of
+specific addresses; currently this is only needed until we hear of
+some ownership on the ring.
+
+
+## Future work
+
+Currently there is no fall-back range if you don't specify one on the
+command-line; it would be better to pick from a set of possibilities
+(checking the range is currently unused before we start using it).
+
+How to use IPAM for WeaveDNS?  It needs its own special subnet.
+
+How should we add support for subnets in general?
+
+We get a bit of noise in the weave logs from containers going down,
+now that the weave script is calling ethtool and curl via containers.
+
+If we hear that a container has died we should knock it out of pending?
+
+Interrogate Docker to check container exists and is alive at the point we assign an IP
+
+To lessen the chance of simultaneous election of two leaders at
+start-up, nodes could wait for a bit to see if more peers arrive
+before running an election.  Also, we could look at the command-line
+parameters supplied to Weave, and wait longer in the case that we have
+been asked to connect to someone specific.
+
+[It would be good to move PeerName out of package router into a more
+central package so both ipam and router can depend on it.]
+
+There is no specific logic to time-out requests such as "give me some
+space": the logic will be re-run and the request re-sent next time
+something else happens (e.g. it receives another request, or some
+periodic gossip). This means we may send out requests more frequently
+than required, but this is innoccuous and it keeps things simple.  It
+is possible for nothing to happen, e.g. if everyone else has
+disconnected.  We could have a timer to re-consider things.

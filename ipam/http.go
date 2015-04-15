@@ -10,6 +10,26 @@ import (
 	"github.com/weaveworks/weave/common"
 )
 
+/*
+The operations supported by this interface are:
+
+  * GET /ip/<containerid> - return a CIDR-format address for the
+    container with ID <containerid>.  This ID should be the full
+    long-format hex number ID that Docker has given it.  If you call
+    this multiple times for the same container it will always return
+    the same address. The return value is in CIDR format (preparatory
+    for future extension to support multiple subnets). Does not return
+    until an address is available (or the allocator shuts down)
+  * PUT /ip/<containerid>/<ip> - state that address <ip> is associated
+    with <containerid>.  If you send an address outside of the space
+    managed by IPAM then this request is ignored.
+  * DELETE /ip/<containerid>/<ip> - state that address <ip> is no
+    longer associated with <containerid>
+  * DELETE /ip/<containerid>/* - equivalent to calling DELETE for all
+    ip addresses associated with <containerid>
+
+*/
+
 // Parse a URL of the form /xxx/<identifier>
 func parseURL(url string) (identifier string, err error) {
 	parts := strings.Split(url, "/")
