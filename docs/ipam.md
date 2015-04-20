@@ -3,7 +3,7 @@ See the [requirements](https://github.com/zettio/weave/wiki/IP-allocation-requir
 At its highest level, the idea is that we start with a certain IP
 address space, a subnet specified by a CIDR (e.g. "10.3.0.0/16"),
 known to all peers, and divide it up between the peers. This allows
-peers to allocate and free individual IPs locally, until they run out.
+peers to allocate and free individual IPs locally until they run out.
 
 We use a CRDT to represent shared knowledge about the subnet,
 transmitted over the Weave Gossip mechanism, together with
@@ -18,14 +18,16 @@ plugin) uses to request IP addresses.
 
 ## Commands
 
-The commands supported by the allocator are:
+The commands supported by the allocator via the http interface are:
 
 - Allocate: request one IP address for a container
-- Delete records for one container: all IP addresses allocated to that
-  container are freed.
+- Free: return an IP address that is currently allocated
 - Claim: request a specific IP address for a container (e.g. because
   it is already using that address)
-- Free: return an IP address that is currently allocated
+
+The allocator also watches via the Docker event mechanism: if a
+container dies then all IP addresses allocated to that container are
+freed.
 
 ## Definitions
 
@@ -34,45 +36,15 @@ The commands supported by the allocator are:
 
 2. Range. Most of the time, instead of dealing with individual IP
    addresses, we operate on them in contiguous groups, for which we
-   use the word "range".  A range has a start address and a length.
+   use the word "range".
 
-3. Subnet. The address space from which all ranges are
-   allocated. This is configured at start-up and cannot be changed
-   during the run-time of the system.
+3. Ring. We consider the subnet as a ring, so ranges wrap around from
+   the highest address to the lowest address.
 
-### The Ring
+4. Peer. A Peer is a node on the Weave network. It can own zero or
+   more ranges.
 
-We consider the subnet as a ring, and place tokens at the start of
-each range owned by a peer.  The peer owns every address from the
-start token up to but not including the next token which denotes
-another owned range. Ranges wrap around the end of the subnet.
-
-This ring is a CRDT.  Peers only ever make changes in ranges that they
-own (except under administrator command - see later). This makes the
-data structure inherently convergent.
-
-In more detail:
-- Each token is a tuple {peer name, version, tombstone flag}, placed at an IP address.
-- Peer names are taken from Weave: they are unique and survive across restarts.
-- A peer owns the ranges indicated by the tokens it owns.
-- A token can only be inserted by the peer owning the range it is inserted into.
-- Entries in the map can only be updated by the owning peer, and when
-  this is done the version is incremented
-- The map is always gossiped in its entirety
-- The merge operation when a peer receives a map is:
-  - Disjoint tokens are just copied into the combined map
-  - For entries with the same token, pick the highest version number
-- If a token maps to a tombstone, this indicates that the previous
-  owning peer that has left the network.
-  - For the purpose of range ownership, tombstones are ignored - ie
-    ranges extend past tombstones.
-  - Tombstones are only inserted by an administrative action (see below)
-  - Tombstones expire and are removed from the ring after two weeks.
-- The data gossiped about the ring also includes the amount of free
-  space in each range: this is not essential but it improves the
-  selection of which peer to ask for space.
-
-### The allocator
+### The Allocation Process
 
 - The allocator can allocate freely to containers on your machine from ranges you own
   - This data does not need to be persisted (assumed to have the same failure domain)
@@ -82,21 +54,51 @@ In more detail:
     owned by each peer
   - if the target peer decides to give up space, it unicasts a message
     back to the asker with the newly-updated ring.
-  - we will continue to ask for space until we receive some via the
-    gossip mechanism, or our copy of the ring tells us all peers are
-    full.
+  - we will continue to ask for space until we receive some, or our
+    copy of the ring tells us all peers are full.
 
-- When peers are asked for space, there are 4 scenarios:
+### The Ring CRDT
+
+We use a Convergent Replicated Data Type - a CRDT - so that peers can
+make changes concurrently and communicate them without central
+coordination. To achieve this, we arrange that peers only make changes
+to the data structure in ranges that they own (except under
+administrator command - see later).
+
+The data structure is a set of tokens containing the name of the
+owning peer. Each token is placed at the start address of a range, and
+the set is kept ordered so each range goes from one token to the
+next. Ranges wrap, so the 'next' token after the last one is the first
+token.
+
+When a peer leaves the network, we mark its tokens with a "tombstone"
+flag. Tombstone tokens are ignored when considering ownership.
+
+In more detail:
+- Each token is a tuple {peer name, version, tombstone flag}, placed
+  at an IP address.
+- Peer names are taken from Weave: they are unique and survive across restarts.
+- Tokens can only be updated by the owning peer, and when this is done
+  the version is incremented
+- The ring data structure is always gossiped in its entirety
+- The merge operation when a peer receives a ring is:
+  - Tokens with unique addresses are just copied into the combined ring
+  - For tokens at the same address, pick the one with the highest
+    version number
+- The data gossiped about the ring also includes the amount of free
+  space in each range: this is not essential but it improves the
+  selection of which peer to ask for space.
+- When peers are asked for space, there are four scenarios:
   1. We have an empty range; we can change the peer associated with
-  the token at the beginning of the range, increment the version and
-  gossip that
+     the token at the beginning of the range, increment the version and
+     gossip that
   2. We have a range which can be subdivided by a single token to form
-  a free range.  We insert said token, mapping to the peer requesting
-  space and gossip that.
+     a free range.  We insert said token, mapping to the peer requesting
+     space and gossip that.
   3. We have a 'hole' in the middle of a range; an empty range can be
-  created by inserting two tokens, one at the beginning of the hole
-  mapping to the peer requesting the space, and one at the end of the
-  hole mapping to us.
+     created by inserting two tokens, one at the beginning of the hole
+     mapping to the peer requesting the space, and one at the end of the
+     hole mapping to us.
   4. We have no space.
 
 ## Initialisation
