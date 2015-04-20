@@ -52,9 +52,7 @@ own (except under administrator command - see later). This makes the
 data structure inherently convergent.
 
 In more detail:
-- The mapping is from token -> {peer name, version, tombstone flag}
-- A token is an IP address.
-- The mapping is sorted by token.
+- Each token is a tuple {peer name, version, tombstone flag}, placed at an IP address.
 - Peer names are taken from Weave: they are unique and survive across restarts.
 - A host owns the ranges indicated by the tokens it owns.
 - A token can only be inserted by the host owning the range it is inserted into.
