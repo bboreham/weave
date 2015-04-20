@@ -46,16 +46,15 @@ freed.
 
 ### The Allocation Process
 
-- The allocator can allocate freely to containers on your machine from ranges you own
-  - This data does not need to be persisted (assumed to have the same failure domain)
-- If the allocator runs out of space (all owned ranges are full), it
-  will ask another peer for space
-  - we pick a peer to ask at random, weighted by the amount of space
+When a peer owns some range(s), it can allocate freely from within
+those ranges to containers on the same machine. If it runs out of
+space (all owned ranges are full), it will ask another peer for space:
+  - it picks a peer to ask at random, weighted by the amount of space
     owned by each peer
   - if the target peer decides to give up space, it unicasts a message
     back to the asker with the newly-updated ring.
-  - we will continue to ask for space until we receive some, or our
-    copy of the ring tells us all peers are full.
+  - it will continue to ask for space until it receives some, or its
+    copy of the ring tells it all peers are full.
 
 ### The Ring CRDT
 
@@ -177,3 +176,11 @@ requires us to hold them separately.
 Conceptually, Allocator is separate from the hosting Weave process and
 its link to the outside world is via its `gossip` and `leadership`
 interfaces.
+
+## Limitations
+
+Nothing is persisted. If one peer restarts it should receive gossip
+from other peers showing what it used to own, and in that case it can
+recover quite well. If, however, there are no peers left alive, or
+this peer cannot establish network communication with those that are,
+then it cannot recover.
