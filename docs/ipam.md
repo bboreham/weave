@@ -51,8 +51,11 @@ those ranges to containers on the same machine. If it runs out of
 space (all owned ranges are full), it will ask another peer for space:
   - it picks a peer to ask at random, weighted by the amount of space
     owned by each peer
-  - if the target peer decides to give up space, it unicasts a message
-    back to the asker with the newly-updated ring.
+    - if the target peer decides to give up space, it unicasts a message
+      back to the asker with the newly-updated ring.
+    - if the target peer has no space, it unicasts a message back to the
+      asker with its current copy of the ring,on the basis tha the
+      requestor must have acted on out-of-date information.
   - it will continue to ask for space until it receives some, or its
     copy of the ring tells it all peers are full.
 
@@ -64,13 +67,13 @@ coordination. To achieve this, we arrange that peers only make changes
 to the data structure in ranges that they own (except under
 administrator command - see later).
 
-The data structure is a set of tokens containing the name of the
-owning peer. Each token is placed at the start address of a range, and
-the set is kept ordered so each range goes from one token to the
-next. Each range on the ring includes the start address but does not
-include the end address (which is the start of the next range).
-Ranges wrap, so the 'next' token after the last one is the first
-token.
+The data structure is a set of tokens, each containing the name of an
+owning peer. A peer can own many ranges. Each token is placed at the
+start address of a range, and the set is kept ordered so each range
+goes from one token to the next. Each range on the ring includes the
+start address but does not include the end address (which is the start
+of the next range).  Ranges wrap, so the 'next' token after the last
+one is the first token.
 
 When a peer leaves the network, we mark its tokens with a "tombstone"
 flag. Tombstone tokens are ignored when considering ownership.
@@ -89,40 +92,41 @@ In more detail:
 - The data gossiped about the ring also includes the amount of free
   space in each range: this is not essential but it improves the
   selection of which peer to ask for space.
-- When peers are asked for space, there are four scenarios:
-  1. We have an empty range; we can change the peer associated with
-     the token at the beginning of the range, increment the version and
-     gossip that
-  2. We have a range which can be subdivided by a single token to form
-     a free range.  We insert said token, mapping to the peer requesting
-     space and gossip that.
-  3. We have a 'hole' in the middle of a range; an empty range can be
+- When a peer is asked for space, there are four scenarios:
+  1. It has an empty range; it can change the peer associated with
+     the token at the beginning of the range and increment the version.
+  2. It has a range which can be subdivided by a single token to form
+     a free range.  It inserts said token, owned by the peer requesting
+     space.
+  3. It has a 'hole' in the middle of a range; an empty range can be
      created by inserting two tokens, one at the beginning of the hole
-     mapping to the peer requesting the space, and one at the end of the
-     hole mapping to us.
-  4. We have no space.
+     owned by the peer requesting the space, and one at the end of the
+     hole owned by the requestee.
+  4. It has no space.
 
 ## Initialisation
 
 Peers are told the the address space from which all allocations are
 made when starting up.  Each peer must be given the same space.
 
-At start-up, nobody owns any of the address space.  We deal with
-concurrent start-up through a process similar to leader election: one
-peer claims the entire space for itself, and then other peers can
-begin to request ranges from it.
+When a peer starts up, it owns no address ranges. If it joins a
+network in which peers already own space, then it can request space
+from another peer as above. If nobody in the network owns any space
+then we follow a process similar to leader election: one peer claims
+the entire space for itself, and then other peers can begin to request
+ranges from it.
 
 1. An election is triggered by some peer being asked (via command) to
    allocate or claim an address.
 2. That peer looks at all peers it knows about, and picks the one with
    the highest ID.
-3. If the one picked is itself, then it inserts a token into the ring,
-   broadcasts the ring via gossip, then responds to the command
-   directly.
+3. If the one picked is itself, then it inserts a token owned by
+   itself into the ring, broadcasts the ring via gossip, then responds
+   to the command directly.
 4. However, if another peer has the highest ID, the peer that
    triggered the election sends a message to the peer it has picked,
    and waits to hear back. A peer receiving such a message behaves as
-   in step 1, i.e. it re-runs the process, possibly choosing yet
+   in step 2, i.e. it re-runs the process, possibly choosing yet
    another peer and sending it a message requesting it to take over.
 
 Step 4 is designed to cope with peers simultaneously joining the
