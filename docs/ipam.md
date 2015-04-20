@@ -105,33 +105,40 @@ In more detail:
 Peers are told the the address space from which all allocations are
 made when starting up.  Each peer must be given the same space.
 
-At start-up, nobody owns any address range.  We deal with concurrent
-start-up through a process of leader election.  In essence, the peer
-with the highest id claims the entire space for itself, and then
-other peers can begin to request ranges from it.  An election is
-triggered by some peer being asked to allocate or claim an address.
+At start-up, nobody owns any of the address space.  We deal with
+concurrent start-up through a process similar to leader election: one
+peer claims the entire space for itself, and then other peers can
+begin to request ranges from it.
 
-If a peer elects itself as leader, then it can respond to the request
-directly.
+1. An election is triggered by some peer being asked (via command) to
+   allocate or claim an address.
+2. That peer looks at all peers it knows about, and picks the one with
+   the highest ID.
+3. If the one picked is itself, then it inserts a token into the ring,
+   broadcasts the ring via gossip, then responds to the command
+   directly.
+4. However, if another peer has the highest ID, the peer that
+   triggered the election sends a message to the peer it has picked,
+   and waits to hear back. A peer receiving such a message behaves as
+   in step 1, i.e. it re-runs the process, possibly choosing yet
+   another peer and sending it a message requesting it to take over.
 
-However, if the election is won by some different peer, then the peer
-that has the request must wait until the leader takes control before
-it can request space.
+Step 4 is designed to cope with peers simultaneously joining the
+network, when information about who has joined has not reached all
+peers yet. By sending a message to the peer we /think/ should be in
+charge, we ensure that the choice is made using the combination of all
+information available to all peers in the network.
 
-The peer that triggered the election sends a message to the peer it
-has elected.  That peer then re-runs the election, to avoid races
-where further peers have joined the group and come to a different
-conclusion.
+If a peer dies just after it has been chosen, then the originating
+peer will not hear back from it. This failure will be detected by the
+underlying Weave peer topology and the dead peer will be removed from
+the set. The originating peer will re-try, re-running the process
+across all connected peers.
 
-Failures:
-- two peers that haven't communicated with each other yet can each
-  decide to be leader
-  -> this is a fundamental problem: if you don't know about someone
-     else then you cannot make allowances for them.
-- prospective leader dies before sending map
-  -> This failure will be detected by the underlying Weave peer
-     topology. The peer requiring space will re-try, re-running the
-     leadership election across all connected peers.
+Sets of peers that don't know about each other, either because the
+network is partitioned or because they just haven't connected yet,
+will each pick a different leader. This problem seems fundamental.
+
 
 ## Peer shutdown
 
