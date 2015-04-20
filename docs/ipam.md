@@ -67,7 +67,9 @@ administrator command - see later).
 The data structure is a set of tokens containing the name of the
 owning peer. Each token is placed at the start address of a range, and
 the set is kept ordered so each range goes from one token to the
-next. Ranges wrap, so the 'next' token after the last one is the first
+next. Each range on the ring includes the start address but does not
+include the end address (which is the start of the next range).
+Ranges wrap, so the 'next' token after the last one is the first
 token.
 
 When a peer leaves the network, we mark its tokens with a "tombstone"
@@ -77,10 +79,10 @@ In more detail:
 - Each token is a tuple {peer name, version, tombstone flag}, placed
   at an IP address.
 - Peer names are taken from Weave: they are unique and survive across restarts.
-- Tokens can only be updated by the owning peer, and when this is done
-  the version is incremented
+- The contents of a token can only be updated by the owning peer, and
+  when this is done the version is incremented
 - The ring data structure is always gossiped in its entirety
-- The merge operation when a peer receives a ring is:
+- The merge operation when a peer receives a ring via gossip is:
   - Tokens with unique addresses are just copied into the combined ring
   - For tokens at the same address, pick the one with the highest
     version number
