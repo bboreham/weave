@@ -1,11 +1,11 @@
 See the [requirements](https://github.com/zettio/weave/wiki/IP-allocation-requirements).
 
 At its highest level, the idea is that we start with a certain IP
-address space, a subnet specified by a CIDR (e.g. "10.3.0.0/16"),
-known to all peers, and divide it up between the peers. This allows
-peers to allocate and free individual IPs locally until they run out.
+address space, known to all peers, and divide it up between the
+peers. This allows peers to allocate and free individual IPs locally
+until they run out.
 
-We use a CRDT to represent shared knowledge about the subnet,
+We use a CRDT to represent shared knowledge about the space,
 transmitted over the Weave Gossip mechanism, together with
 point-to-point messages for one peer to request more space from
 another.
@@ -38,8 +38,8 @@ freed.
    addresses, we operate on them in contiguous groups, for which we
    use the word "range".
 
-3. Ring. We consider the subnet as a ring, so ranges wrap around from
-   the highest address to the lowest address.
+3. Ring. We consider the address space as a ring, so ranges wrap
+   around from the highest address to the lowest address.
 
 4. Peer. A Peer is a node on the Weave network. It can own zero or
    more ranges.
@@ -103,12 +103,12 @@ In more detail:
 
 ## Initialisation
 
-Peers are told the subnet - the IP range from which all allocations
-are made - when starting up.  Each peer must be given the same range.
+Peers are told the the address space from which all allocations are
+made when starting up.  Each peer must be given the same space.
 
 At start-up, nobody owns any address range.  We deal with concurrent
 start-up through a process of leader election.  In essence, the peer
-with the highest id claims the entire subnet for itself, and then
+with the highest id claims the entire space for itself, and then
 other peers can begin to request ranges from it.  An election is
 triggered by some peer being asked to allocate or claim an address.
 
