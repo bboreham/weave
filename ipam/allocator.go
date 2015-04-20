@@ -36,20 +36,22 @@ type operation interface {
 	String() string
 }
 
-// Allocator brings together Ring and space.Set, and does the nessecary plumbing.
+// Allocator brings together Ring and space.Set, and does the
+// necessary plumbing.  Runs as a single-threaded Actor, so no locks
+// are used around data structures.
 type Allocator struct {
 	actionChan         chan<- func()
 	ourName            router.PeerName
-	subnetStart        net.IP
-	subnetSize         uint32
-	prefixLen          int        // length of network prefix (e.g. 24 for a /24 network)
-	ring               *ring.Ring // it's for you!
-	spaceSet           space.Set
+	subnetStart        net.IP                     // start address of space all peers are allocating from
+	subnetSize         uint32                     // length of space all peers are allocating from
+	prefixLen          int                        // network prefix length, e.g. 24 for a /24 network
+	ring               *ring.Ring                 // information on ranges owned by all peers
+	spaceSet           space.Set                  // more detail on ranges owned by us
 	owned              map[string][]net.IP        // who owns what address, indexed by container-ID
 	otherPeerNicknames map[router.PeerName]string // so we can map nicknames for tombstoning
-	pendingGetFors     []operation
-	pendingClaims      []operation
-	gossip             router.Gossip
+	pendingGetFors     []operation                // held until we get some free space
+	pendingClaims      []operation                // held until we know who owns the space
+	gossip             router.Gossip              // our link to the outside world for sending messages
 	leadership         router.Leadership
 	shuttingDown       bool // to avoid doing any requests while trying to tombstone ourself
 }
@@ -135,6 +137,8 @@ func (alloc *Allocator) cancelOps(ops *[]operation) {
 
 // Try all pending operations
 func (alloc *Allocator) tryPendingOps() {
+	// The slightly different semantics requires us to operate on 'claims' and
+	// 'getfors' separately:
 	// Claims must be tried before GetFors
 	for i := 0; i < len(alloc.pendingClaims); {
 		op := alloc.pendingClaims[i]

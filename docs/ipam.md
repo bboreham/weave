@@ -168,28 +168,6 @@ and command that it mark the dead peer's tokens as tombstones (with
 network.
 
 
-## Data Structures
-
-### Allocator
-
-Allocator runs as a single-threaded Actor, so no locks are used around
-data structures.
-
-We need to be able to release any allocations when a container dies, so
-Allocator retains a list of those, in a map `owned` indexed by container ID.
-
-When we run out of free addresses we ask another peer to donate space
-and wait for it to get back to us, so we have a list of outstanding
-'getfor' requests.  There is also a list recording pending claims of
-specific addresses; currently this is only needed until we hear of
-some ownership on the ring. These are implemented via a common
-'operation' interface, although the slightly different semantics
-requires us to hold them separately.
-
-Conceptually, Allocator is separate from the hosting Weave process and
-its link to the outside world is via its `gossip` and `leadership`
-interfaces.
-
 ## Limitations
 
 Nothing is persisted. If one peer restarts it should receive gossip
