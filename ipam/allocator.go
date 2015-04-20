@@ -40,9 +40,9 @@ type operation interface {
 type Allocator struct {
 	actionChan         chan<- func()
 	ourName            router.PeerName
-	universeStart      net.IP
-	universeSize       uint32
-	universeLen        int        // length of network prefix (e.g. 24 for a /24 network)
+	subnetStart        net.IP
+	subnetSize         uint32
+	prefixLen          int        // length of network prefix (e.g. 24 for a /24 network)
 	ring               *ring.Ring // it's for you!
 	spaceSet           space.Set
 	owned              map[string][]net.IP        // who owns what address, indexed by container-ID
@@ -55,26 +55,27 @@ type Allocator struct {
 }
 
 // NewAllocator creates and initialises a new Allocator
-func NewAllocator(ourName router.PeerName, universeCIDR string) (*Allocator, error) {
-	_, universeNet, err := net.ParseCIDR(universeCIDR)
+func NewAllocator(ourName router.PeerName, subnetCIDR string) (*Allocator, error) {
+	_, subnet, err := net.ParseCIDR(subnetCIDR)
 	if err != nil {
 		return nil, err
 	}
-	if universeNet.IP.To4() == nil {
+	if subnet.IP.To4() == nil {
 		return nil, errors.New("Non-IPv4 address not supported")
 	}
 	// Get the size of the network from the mask
-	ones, bits := universeNet.Mask.Size()
-	var universeSize uint32 = 1 << uint(bits-ones)
-	if universeSize < 4 {
-		return nil, errors.New("Allocation universe too small")
+	ones, bits := subnet.Mask.Size()
+	var subnetSize uint32 = 1 << uint(bits-ones)
+	if subnetSize < 4 {
+		return nil, errors.New("Allocation subnet too small")
 	}
 	alloc := &Allocator{
-		ourName:            ourName,
-		universeStart:      universeNet.IP,
-		universeSize:       universeSize,
-		universeLen:        ones,
-		ring:               ring.New(utils.Add(universeNet.IP, 1), utils.Add(universeNet.IP, universeSize-1), ourName),
+		ourName:     ourName,
+		subnetStart: subnet.IP,
+		subnetSize:  subnetSize,
+		prefixLen:   ones,
+		// per RFC 1122, don't allocate the first and last address in the subnet
+		ring:               ring.New(utils.Add(subnet.IP, 1), utils.Add(subnet.IP, subnetSize-1), ourName),
 		owned:              make(map[string][]net.IP),
 		otherPeerNicknames: make(map[router.PeerName]string),
 	}
@@ -392,7 +393,7 @@ func (alloc *Allocator) actorLoop(actionChan <-chan func()) {
 
 func (alloc *Allocator) string() string {
 	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "Allocator universe %s+%d\n", alloc.universeStart, alloc.universeSize)
+	fmt.Fprintf(&buf, "Allocator subnet %s+%d\n", alloc.subnetStart, alloc.subnetSize)
 	alloc.ring.FprintWithNicknames(&buf, alloc.otherPeerNicknames)
 	fmt.Fprintf(&buf, alloc.spaceSet.String())
 	if len(alloc.pendingGetFors)+len(alloc.pendingClaims) > 0 {
@@ -414,10 +415,10 @@ func (alloc *Allocator) electLeaderIfNecessary() {
 	leader := alloc.leadership.LeaderElect()
 	alloc.debugln("Elected leader:", leader)
 	if leader == alloc.ourName {
-		// I'm the winner; take control of the whole universe
+		// I'm the winner; take control of the whole subnet
 		alloc.ring.ClaimItAll()
 		alloc.considerNewSpaces()
-		alloc.infof("I was elected leader of the universe\n%s", alloc.string())
+		alloc.infof("I was elected leader \n%s", alloc.string())
 		alloc.gossip.GossipBroadcast(alloc.Gossip())
 		alloc.tryPendingOps()
 	} else {

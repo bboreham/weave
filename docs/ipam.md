@@ -1,11 +1,11 @@
 See the [requirements](https://github.com/zettio/weave/wiki/IP-allocation-requirements).
 
 At its highest level, the idea is that we start with a certain IP
-address space, known to all peers, and divide it up between the
-peers. This allows peers to allocate and free individual IPs locally,
-until they run out.
+address space, a subnet specified by a CIDR (e.g. "10.3.0.0/16"),
+known to all peers, and divide it up between the peers. This allows
+peers to allocate and free individual IPs locally, until they run out.
 
-We use a CRDT to represent shared knowledge about the space,
+We use a CRDT to represent shared knowledge about the subnet,
 transmitted over the Weave Gossip mechanism, together with
 point-to-point messages for one peer to request more space from
 another.
@@ -36,16 +36,16 @@ The commands supported by the allocator are:
    addresses, we operate on them in contiguous groups, for which we
    use the word "range".  A range has a start address and a length.
 
-3. Universe. The address space from which all ranges are
+3. Subnet. The address space from which all ranges are
    allocated. This is configured at start-up and cannot be changed
    during the run-time of the system.
 
 ### The Ring
 
-We consider the universe as a ring, and place tokens at the start of
+We consider the subnet as a ring, and place tokens at the start of
 each range owned by a peer.  The peer owns every address from the
 start token up to but not including the next token which denotes
-another owned range. Ranges wrap around the end of the universe.
+another owned range. Ranges wrap around the end of the subnet.
 
 This ring is a CRDT.  Peers only ever make changes in ranges that they
 own (except under administrator command - see later). This makes the
@@ -101,12 +101,12 @@ In more detail:
 
 ## Initialisation
 
-Peers are told the universe - the IP range from which all allocations
+Peers are told the subnet - the IP range from which all allocations
 are made - when starting up.  Each peer must be given the same range.
 
 At start-up, nobody owns any address range.  We deal with concurrent
 start-up through a process of leader election.  In essence, the peer
-with the highest id claims the entire universe for itself, and then
+with the highest id claims the entire subnet for itself, and then
 other peers can begin to request ranges from it.  An election is
 triggered by some peer being asked to allocate or claim an address.
 

@@ -77,7 +77,7 @@ func (alloc *Allocator) HandleHTTP(mux *http.ServeMux) {
 			if err != nil {
 				badRequest(w, err)
 			} else if newAddr := alloc.GetFor(ident, closedChan); newAddr != nil {
-				fmt.Fprintf(w, "%s/%d", newAddr, alloc.universeLen)
+				fmt.Fprintf(w, "%s/%d", newAddr, alloc.prefixLen)
 			} else {
 				badRequest(w, fmt.Errorf("Allocator shutting down"))
 			}
