@@ -1,8 +1,8 @@
 See the [requirements](https://github.com/zettio/weave/wiki/IP-allocation-requirements).
 
 At its highest level, the idea is that we start with a certain IP
-address space, known to all nodes, and divide it up between the
-nodes. This allows nodes to allocate and free individual IPs locally,
+address space, known to all peers, and divide it up between the
+peers. This allows peers to allocate and free individual IPs locally,
 until they run out.
 
 We use a CRDT to represent shared knowledge about the space,
@@ -10,7 +10,7 @@ transmitted over the Weave Gossip mechanism, together with
 point-to-point messages for one peer to request more space from
 another.
 
-The allocator running at each node also has an http interface which
+The allocator running at each peer also has an http interface which
 the container infrastructure (e.g. the Weave script, or a Docker
 plugin) uses to request IP addresses.
 
@@ -43,71 +43,71 @@ The commands supported by the allocator are:
 ### The Ring
 
 We consider the universe as a ring, and place tokens at the start of
-each range owned by a node.  The node owns every address from the
+each range owned by a peer.  The peer owns every address from the
 start token up to but not including the next token which denotes
 another owned range. Ranges wrap around the end of the universe.
 
-This ring is a CRDT.  Nodes only ever make changes in ranges that they
+This ring is a CRDT.  Peers only ever make changes in ranges that they
 own (except under administrator command - see later). This makes the
 data structure inherently convergent.
 
 In more detail:
 - Each token is a tuple {peer name, version, tombstone flag}, placed at an IP address.
 - Peer names are taken from Weave: they are unique and survive across restarts.
-- A host owns the ranges indicated by the tokens it owns.
-- A token can only be inserted by the host owning the range it is inserted into.
-- Entries in the map can only be updated by the owning host, and when
+- A peer owns the ranges indicated by the tokens it owns.
+- A token can only be inserted by the peer owning the range it is inserted into.
+- Entries in the map can only be updated by the owning peer, and when
   this is done the version is incremented
 - The map is always gossiped in its entirety
-- The merge operation when a host receives a map is:
+- The merge operation when a peer receives a map is:
   - Disjoint tokens are just copied into the combined map
   - For entries with the same token, pick the highest version number
 - If a token maps to a tombstone, this indicates that the previous
-  owning host that has left the network.
+  owning peer that has left the network.
   - For the purpose of range ownership, tombstones are ignored - ie
     ranges extend past tombstones.
   - Tombstones are only inserted by an administrative action (see below)
   - Tombstones expire and are removed from the ring after two weeks.
 - The data gossiped about the ring also includes the amount of free
   space in each range: this is not essential but it improves the
-  selection of which node to ask for space.
+  selection of which peer to ask for space.
 
 ### The allocator
 
 - The allocator can allocate freely to containers on your machine from ranges you own
   - This data does not need to be persisted (assumed to have the same failure domain)
 - If the allocator runs out of space (all owned ranges are full), it
-  will ask another host for space
-  - we pick a host to ask at random, weighted by the amount of space
-    owned by each host
-  - if the target host decides to give up space, it unicasts a message
+  will ask another peer for space
+  - we pick a peer to ask at random, weighted by the amount of space
+    owned by each peer
+  - if the target peer decides to give up space, it unicasts a message
     back to the asker with the newly-updated ring.
   - we will continue to ask for space until we receive some via the
-    gossip mechanism, or our copy of the ring tells us all nodes are
+    gossip mechanism, or our copy of the ring tells us all peers are
     full.
 
-- When hosts are asked for space, there are 4 scenarios:
-  1. We have an empty range; we can change the host associated with
+- When peers are asked for space, there are 4 scenarios:
+  1. We have an empty range; we can change the peer associated with
   the token at the beginning of the range, increment the version and
   gossip that
   2. We have a range which can be subdivided by a single token to form
-  a free range.  We insert said token, mapping to the host requesting
+  a free range.  We insert said token, mapping to the peer requesting
   space and gossip that.
   3. We have a 'hole' in the middle of a range; an empty range can be
   created by inserting two tokens, one at the beginning of the hole
-  mapping to the host requesting the space, and one at the end of the
+  mapping to the peer requesting the space, and one at the end of the
   hole mapping to us.
   4. We have no space.
 
 ## Initialisation
 
-Nodes are told the universe - the IP range from which all allocations
-are made - when starting up.  Each node must be given the same range.
+Peers are told the universe - the IP range from which all allocations
+are made - when starting up.  Each peer must be given the same range.
 
 At start-up, nobody owns any address range.  We deal with concurrent
-start-up through a process of leader election.  In essence, the node
+start-up through a process of leader election.  In essence, the peer
 with the highest id claims the entire universe for itself, and then
-other nodes can begin to request ranges from it.  An election is
+other peers can begin to request ranges from it.  An election is
 triggered by some peer being asked to allocate or claim an address.
 
 If a peer elects itself as leader, then it can respond to the request
@@ -123,33 +123,33 @@ where further peers have joined the group and come to a different
 conclusion.
 
 Failures:
-- two nodes that haven't communicated with each other yet can each
+- two peers that haven't communicated with each other yet can each
   decide to be leader
   -> this is a fundamental problem: if you don't know about someone
      else then you cannot make allowances for them.
 - prospective leader dies before sending map
   -> This failure will be detected by the underlying Weave peer
-     topology. The node requiring space will re-try, re-running the
+     topology. The peer requiring space will re-try, re-running the
      leadership election across all connected peers.
 
-## Node shutdown
+## Peer shutdown
 
-When a node leaves (a `weave reset` command), it updates all its own
+When a peer leaves (a `weave reset` command), it updates all its own
 tokens to be tombstones, then broadcasts the updated ring.  This
 causes its space to be inherited by the owner of the previous tokens
 on the ring, for each range.
 
-After sending the message, the node terminates - it does not wait for
+After sending the message, the peer terminates - it does not wait for
 any response.
 
 Failures:
 - message lost
-  - the space will be unusable by other nodes because it will still be
+  - the space will be unusable by other peers because it will still be
     seen as owned.
 
-To cope with the situation where a node has left or died without
-managing to tell its peers, an administrator may go to any other node
-and command that it mark the dead node's tokens as tombstones (with
+To cope with the situation where a peer has left or died without
+managing to tell its peers, an administrator may go to any other peer
+and command that it mark the dead peer's tokens as tombstones (with
 `weave rmpeer`).  This information will then be gossipped out to the
 network.
 
@@ -195,7 +195,7 @@ If we hear that a container has died we should knock it out of pending?
 Interrogate Docker to check container exists and is alive at the point we assign an IP
 
 To lessen the chance of simultaneous election of two leaders at
-start-up, nodes could wait for a bit to see if more peers arrive
+start-up, peers could wait for a bit to see if more peers arrive
 before running an election.  Also, we could look at the command-line
 parameters supplied to Weave, and wait longer in the case that we have
 been asked to connect to someone specific.
