@@ -5,13 +5,13 @@ import (
 	"net"
 )
 
-type getfor struct {
+type allocate struct {
 	resultChan chan<- net.IP
 	ident      string
 }
 
 // Try returns true if the request is completed, false if pending
-func (g *getfor) Try(alloc *Allocator) bool {
+func (g *allocate) Try(alloc *Allocator) bool {
 	// If we have previously stored an address for this container, return it.
 	// FIXME: the data structure allows multiple addresses per (allocator per) ident but the code doesn't
 	if addrs, found := alloc.owned[g.ident]; found && len(addrs) > 0 {
@@ -35,10 +35,10 @@ func (g *getfor) Try(alloc *Allocator) bool {
 	return false
 }
 
-func (g *getfor) Cancel() {
+func (g *allocate) Cancel() {
 	g.resultChan <- nil
 }
 
-func (g *getfor) String() string {
-	return fmt.Sprintf("GetFor %s", g.ident)
+func (g *allocate) String() string {
+	return fmt.Sprintf("Allocate for %s", g.ident)
 }

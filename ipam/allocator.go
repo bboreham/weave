@@ -49,7 +49,7 @@ type Allocator struct {
 	spaceSet           space.Set                  // more detail on ranges owned by us
 	owned              map[string][]net.IP        // who owns what address, indexed by container-ID
 	otherPeerNicknames map[router.PeerName]string // so we can map nicknames for tombstoning
-	pendingGetFors     []operation                // held until we get some free space
+	pendingAllocates   []operation                // held until we get some free space
 	pendingClaims      []operation                // held until we know who owns the space
 	gossip             router.Gossip              // our link to the outside world for sending messages
 	leadership         router.Leadership
@@ -143,8 +143,8 @@ func (alloc *Allocator) cancelOps(ops *[]operation) {
 // Try all pending operations
 func (alloc *Allocator) tryPendingOps() {
 	// The slightly different semantics requires us to operate on 'claims' and
-	// 'getfors' separately:
-	// Claims must be tried before GetFors
+	// 'allocates' separately:
+	// Claims must be tried before Allocates
 	for i := 0; i < len(alloc.pendingClaims); {
 		op := alloc.pendingClaims[i]
 		if !op.Try(alloc) {
@@ -154,27 +154,27 @@ func (alloc *Allocator) tryPendingOps() {
 		alloc.pendingClaims = append(alloc.pendingClaims[:i], alloc.pendingClaims[i+1:]...)
 	}
 
-	// When the first GetFor fails, bail - no need to
+	// When the first Allocate fails, bail - no need to
 	// send too many begs for space.
-	for i := 0; i < len(alloc.pendingGetFors); {
-		op := alloc.pendingGetFors[i]
+	for i := 0; i < len(alloc.pendingAllocates); {
+		op := alloc.pendingAllocates[i]
 		if !op.Try(alloc) {
 			break
 		}
-		alloc.pendingGetFors = append(alloc.pendingGetFors[:i], alloc.pendingGetFors[i+1:]...)
+		alloc.pendingAllocates = append(alloc.pendingAllocates[:i], alloc.pendingAllocates[i+1:]...)
 	}
 }
 
 // Actor client API
 
-// GetFor (Sync) - get IP address for container with given name
+// Allocate (Sync) - get IP address for container with given name
 // if there isn't any space we block indefinitely
-func (alloc *Allocator) GetFor(ident string, cancelChan <-chan bool) net.IP {
+func (alloc *Allocator) Allocate(ident string, cancelChan <-chan bool) net.IP {
 	resultChan := make(chan net.IP, 1)
-	op := &getfor{resultChan: resultChan, ident: ident}
+	op := &allocate{resultChan: resultChan, ident: ident}
 
 	alloc.actionChan <- func() {
-		if err := alloc.doOperation(op, &alloc.pendingGetFors); err != nil {
+		if err := alloc.doOperation(op, &alloc.pendingAllocates); err != nil {
 			resultChan <- nil
 		}
 	}
@@ -184,7 +184,7 @@ func (alloc *Allocator) GetFor(ident string, cancelChan <-chan bool) net.IP {
 		return result
 	case <-cancelChan:
 		alloc.actionChan <- func() {
-			alloc.cancelOp(op, &alloc.pendingGetFors)
+			alloc.cancelOp(op, &alloc.pendingAllocates)
 		}
 		return <-resultChan
 	}
@@ -253,7 +253,7 @@ func (alloc *Allocator) Shutdown() {
 	alloc.actionChan <- func() {
 		alloc.shuttingDown = true
 		alloc.cancelOps(&alloc.pendingClaims)
-		alloc.cancelOps(&alloc.pendingGetFors)
+		alloc.cancelOps(&alloc.pendingAllocates)
 		alloc.ring.TombstonePeer(alloc.ourName, 100)
 		alloc.gossip.GossipBroadcast(alloc.Gossip())
 		alloc.spaceSet.Clear()
@@ -403,10 +403,10 @@ func (alloc *Allocator) string() string {
 	fmt.Fprintf(&buf, "Allocator subnet %s+%d\n", alloc.subnetStart, alloc.subnetSize)
 	alloc.ring.FprintWithNicknames(&buf, alloc.otherPeerNicknames)
 	fmt.Fprintf(&buf, alloc.spaceSet.String())
-	if len(alloc.pendingGetFors)+len(alloc.pendingClaims) > 0 {
+	if len(alloc.pendingAllocates)+len(alloc.pendingClaims) > 0 {
 		fmt.Fprintf(&buf, "\nPending requests for ")
 	}
-	for _, op := range alloc.pendingGetFors {
+	for _, op := range alloc.pendingAllocates {
 		fmt.Fprintf(&buf, "%s, ", op.String())
 	}
 	for _, op := range alloc.pendingClaims {

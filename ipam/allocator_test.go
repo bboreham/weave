@@ -33,22 +33,22 @@ func TestAllocFree(t *testing.T) {
 	defer alloc.Stop()
 
 	ExpectBroadcastMessage(alloc, nil) // on leader election, broadcasts its state
-	addr1 := alloc.GetFor(container1, nil)
+	addr1 := alloc.Allocate(container1, nil)
 	wt.AssertEqualString(t, addr1.String(), testAddr1, "address")
 
 	// Ask for another address for a different container and check it's different
-	addr2 := alloc.GetFor(container2, nil)
+	addr2 := alloc.Allocate(container2, nil)
 	if addr2.String() == testAddr1 {
 		t.Fatalf("Expected different address but got %s", addr2)
 	}
 
 	// Ask for the first container again and we should get the same address again
-	addr1a := alloc.GetFor(container1, nil)
+	addr1a := alloc.Allocate(container1, nil)
 	wt.AssertEqualString(t, addr1a.String(), testAddr1, "address")
 
 	// Now free the first one, and we should get it back when we ask
 	alloc.Free(container1, net.ParseIP(testAddr1))
-	addr3 := alloc.GetFor(container3, nil)
+	addr3 := alloc.Allocate(container3, nil)
 	wt.AssertEqualString(t, addr3.String(), testAddr1, "address")
 
 	alloc.ContainerDied(container2)
@@ -78,12 +78,12 @@ func TestElection(t *testing.T) {
 	alloc1.tryPendingOps()
 
 	SetLeader(alloc1, peerNameString)
-	// On receipt of the GetFor, alloc1 should elect alloc2 as leader
+	// On receipt of the Allocate, alloc1 should elect alloc2 as leader
 	ExpectMessage(alloc1, peerNameString, msgLeaderElected, nil)
 
 	done := make(chan bool)
 	go func() {
-		alloc1.GetFor("somecontainer", nil)
+		alloc1.Allocate("somecontainer", nil)
 		done <- true
 	}()
 	time.Sleep(100 * time.Millisecond)
@@ -125,14 +125,14 @@ func TestAllocatorClaim(t *testing.T) {
 	defer alloc.Stop()
 
 	ExpectBroadcastMessage(alloc, nil) // on leader election, broadcasts its state
-	addr1 := alloc.GetFor(container1, nil)
-	alloc.GetFor(container2, nil)
+	addr1 := alloc.Allocate(container1, nil)
+	alloc.Allocate(container2, nil)
 
 	// Now free the first one, and try to claim it
 	alloc.Free(container1, net.ParseIP(testAddr1))
 	err := alloc.Claim(container3, addr1, nil)
 	wt.AssertNoErr(t, err)
-	addr3 := alloc.GetFor(container3, nil)
+	addr3 := alloc.Allocate(container3, nil)
 	wt.AssertEqualString(t, addr3.String(), testAddr1, "address")
 }
 
@@ -165,9 +165,9 @@ func TestCancel(t *testing.T) {
 	alloc1.OnGossipBroadcast(alloc2.EncodeState())
 
 	// Get some IPs, so each allocator has some space
-	res1 := alloc1.GetFor("foo", nil)
+	res1 := alloc1.Allocate("foo", nil)
 	common.Debug.Printf("res1 = %s", res1)
-	res2 := alloc2.GetFor("bar", nil)
+	res2 := alloc2.Allocate("bar", nil)
 	common.Debug.Printf("res2 = %s", res2)
 	if res1.Equal(res2) {
 		wt.Fatalf(t, "Error: got same ips!")
@@ -180,13 +180,13 @@ func TestCancel(t *testing.T) {
 
 	// Use up all the IPs that alloc1 owns, so the allocation after this will prompt a request to alloc2
 	for i := 0; alloc1.spaceSet.NumFreeAddresses() > 0; i++ {
-		alloc1.GetFor(fmt.Sprintf("tmp%d", i), nil)
+		alloc1.Allocate(fmt.Sprintf("tmp%d", i), nil)
 	}
 
 	cancelChan := make(chan bool, 1)
 	doneChan := make(chan bool)
 	go func() {
-		ip := alloc1.GetFor("baz", cancelChan)
+		ip := alloc1.Allocate("baz", cancelChan)
 		doneChan <- (ip == nil)
 	}()
 
@@ -196,7 +196,7 @@ func TestCancel(t *testing.T) {
 	cancelChan <- true
 	flag := <-doneChan
 	if !flag {
-		wt.Fatalf(t, "Error: got non-nil result from GetFor")
+		wt.Fatalf(t, "Error: got non-nil result from Allocate")
 	}
 	alloc2.String() // see if it's still operating.
 }
@@ -213,13 +213,13 @@ func TestGossipShutdown(t *testing.T) {
 	defer alloc.Stop()
 
 	ExpectBroadcastMessage(alloc, nil) // on leader election, broadcasts its state
-	addr1 := alloc.GetFor(container1, nil)
+	addr1 := alloc.Allocate(container1, nil)
 	wt.AssertEqualString(t, addr1.String(), testAddr1, "address")
 
 	ExpectBroadcastMessage(alloc, nil) // broadcasts state with tombstone
 	alloc.Shutdown()
 
-	addr2 := alloc.GetFor(container2, nil) // trying to allocate after shutdown should fail
+	addr2 := alloc.Allocate(container2, nil) // trying to allocate after shutdown should fail
 	wt.AssertEqualString(t, addr2.String(), "<nil>", "address")
 
 	CheckAllExpectedMessagesSent(alloc)
@@ -244,10 +244,10 @@ func TestTombstoneEveryone(t *testing.T) {
 	alloc2 := allocs[1]
 	alloc3 := allocs[2] // This will be 'master' and get the first range
 
-	addr := alloc2.GetFor("foo", nil)
+	addr := alloc2.Allocate("foo", nil)
 	wt.AssertTrue(t, addr != nil, "Failed to get address")
 
-	addr = alloc3.GetFor("bar", nil)
+	addr = alloc3.Allocate("bar", nil)
 	wt.AssertTrue(t, addr != nil, "Failed to get address")
 
 	router.GossipBroadcast(alloc2.Gossip())
@@ -261,7 +261,7 @@ func TestTombstoneEveryone(t *testing.T) {
 
 	wt.AssertTrue(t, alloc1.ring.Empty(), "Ring not empy!")
 
-	addr = alloc1.GetFor("foo", nil)
+	addr = alloc1.Allocate("foo", nil)
 	wt.AssertTrue(t, addr != nil, "Failed to get address")
 }
 
@@ -276,7 +276,7 @@ func TestFakeRouterSimple(t *testing.T) {
 	alloc1 := allocs[0]
 	//alloc2 := allocs[1]
 
-	addr := alloc1.GetFor("foo", nil)
+	addr := alloc1.Allocate("foo", nil)
 
 	println("Got addr", addr)
 }
@@ -319,10 +319,10 @@ func TestAllocatorFuzz(t *testing.T) {
 		return xs[:ls]
 	}
 
-	// Do a GetFor and check the address
+	// Do a Allocate and check the address
 	// is unique.  Needs a unique container
 	// name.
-	getFor := func(name string) {
+	allocate := func(name string) {
 		stateLock.Lock()
 		if len(addrs)+numPending >= maxAddresses {
 			stateLock.Unlock()
@@ -333,14 +333,14 @@ func TestAllocatorFuzz(t *testing.T) {
 
 		allocIndex := rand.Int31n(nodes)
 		alloc := allocs[allocIndex]
-		//common.Info.Printf("GetFor: asking allocator %d", allocIndex)
-		addr := alloc.GetFor(name, nil)
+		//common.Info.Printf("Allocate: asking allocator %d", allocIndex)
+		addr := alloc.Allocate(name, nil)
 
 		if addr == nil {
 			panic(fmt.Sprintf("Could not allocate addr"))
 		}
 
-		//common.Info.Printf("GetFor: got address %s for name %s", addr, name)
+		//common.Info.Printf("Allocate: got address %s for name %s", addr, name)
 		addrStr := addr.String()
 
 		stateLock.Lock()
@@ -381,9 +381,9 @@ func TestAllocatorFuzz(t *testing.T) {
 		}
 	}
 
-	// Do a GetFor on an existing container & allocator
+	// Do a Allocate on an existing container & allocator
 	// and check we get the right answer.
-	getForAgain := func() {
+	allocateAgain := func() {
 		stateLock.Lock()
 		addrIndex := rand.Int31n(int32(len(addrs)))
 		addr := addrs[addrIndex]
@@ -393,7 +393,7 @@ func TestAllocatorFuzz(t *testing.T) {
 
 		//common.Info.Printf("Asking for %s on allocator %d again", addr, res.alloc)
 
-		newAddr := alloc.GetFor(res.name, nil)
+		newAddr := alloc.Allocate(res.name, nil)
 		if !newAddr.Equal(net.ParseIP(addr)) {
 			panic(fmt.Sprintf("Got different address for repeat request"))
 		}
@@ -420,7 +420,7 @@ func TestAllocatorFuzz(t *testing.T) {
 	// First pass, just allocate a bunch of ips
 	doConcurrentIterations(firstpass, func(iteration int) {
 		name := fmt.Sprintf("first%d", iteration)
-		getFor(name)
+		allocate(name)
 	})
 
 	// Second pass, random ask for more allocations,
@@ -432,7 +432,7 @@ func TestAllocatorFuzz(t *testing.T) {
 		case 0.0 <= r && r < 0.4:
 			// Ask for a new allocation
 			name := fmt.Sprintf("second%d", iteration)
-			getFor(name)
+			allocate(name)
 
 		case (0.4 <= r && r < 0.8):
 			// free a random addr
@@ -440,7 +440,7 @@ func TestAllocatorFuzz(t *testing.T) {
 
 		case 0.8 <= r && r < 1.0:
 			// ask for an existing name again, check we get same ip
-			getForAgain()
+			allocateAgain()
 		}
 	})
 }
