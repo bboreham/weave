@@ -59,6 +59,31 @@ space (all owned ranges are full), it will ask another peer for space:
   - it will continue to ask for space until it receives some, or its
     copy of the ring tells it all peers are full.
 
+### Claiming an address
+
+If a Weave process is restarted, in most cases it will hear from
+another peer which ranges it used to own, but it needs to know which
+individual IP addresses are assigned to containers in order to avoid
+giving the same address out in subsequent allocation requests. The
+weave script invokes the `claim` command in `populate_ipam` to do
+this.
+
+When the Allocator is told to claim an address, there are four
+possibilities:
+  - the address is outside of the space managed by this Allocator, in
+    which case we ignore the request.
+  - the address is owned by this peer, in which case we record the
+    address as being assigned to a particular container and return
+    success.
+  - the address is owned by a different peer, in which case we return
+    failure.
+  - we have not yet heard of any address ranges being owned by anyone,
+    in which case we wait until we do hear.
+
+This approach fails if the peer does not hear from another peer about
+the ranges it used to own, e.g. if all peers in a network partition
+are restarted at once.
+
 ### The Ring CRDT
 
 We use a Convergent Replicated Data Type - a CRDT - so that peers can
