@@ -144,11 +144,6 @@ func testAllocator(t *testing.T, name string, universeCIDR string) *Allocator {
 	return alloc
 }
 
-// Async.
-func (alloc *Allocator) Stop() {
-	alloc.actionChan <- nil
-}
-
 // Check whether or not something was sent on a channel
 func AssertSent(t *testing.T, ch <-chan bool) {
 	timeout := time.After(10 * time.Second)

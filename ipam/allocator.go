@@ -99,6 +99,11 @@ func (alloc *Allocator) Start() {
 	go alloc.actorLoop(actionChan)
 }
 
+// Async.
+func (alloc *Allocator) Stop() {
+	alloc.actionChan <- nil
+}
+
 // Operation life cycle
 
 // Given an operation, try it, and add it to the pending queue if it didn't succeed
@@ -380,13 +385,11 @@ func (alloc *Allocator) SetInterfaces(gossip router.Gossip, leadership router.Le
 
 func (alloc *Allocator) actorLoop(actionChan <-chan func()) {
 	for {
-		select {
-		case action := <-actionChan:
-			if action == nil {
-				return
-			}
-			action()
+		action := <-actionChan
+		if action == nil {
+			break
 		}
+		action()
 		alloc.assertInvariants()
 		alloc.reportFreeSpace()
 		alloc.ring.ExpireTombstones(time.Now().Unix())
