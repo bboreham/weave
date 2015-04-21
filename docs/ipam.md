@@ -75,6 +75,8 @@ start address but does not include the end address (which is the start
 of the next range).  Ranges wrap, so the 'next' token after the last
 one is the first token.
 
+![Tokens on the Ring](https://docs.google.com/drawings/d/1hp--q2vmxbBAnPjhza4Kqjr1ugrw2iS1M1GerhH-IKY/pub?w=960&h=288)
+
 When a peer leaves the network, we mark its tokens with a "tombstone"
 flag. Tombstone tokens are ignored when considering ownership.
 
