@@ -14,8 +14,8 @@ import (
 	wt "github.com/weaveworks/weave/testing"
 )
 
-func HTTPGet(t *testing.T, url string) string {
-	resp, err := http.Get(url)
+func HTTPPost(t *testing.T, url string) string {
+	resp, err := http.Post(url, "", nil)
 	wt.AssertNoErr(t, err)
 	wt.AssertStatus(t, resp.StatusCode, http.StatusOK, "http response")
 	defer resp.Body.Close()
@@ -23,7 +23,7 @@ func HTTPGet(t *testing.T, url string) string {
 	return string(body)
 }
 
-func getHTTP(method string, url string) (resp *http.Response, err error) {
+func doHTTP(method string, url string) (resp *http.Response, err error) {
 	req, _ := http.NewRequest(method, url, nil)
 	return http.DefaultClient.Do(req)
 }
@@ -63,20 +63,20 @@ func TestHttp(t *testing.T) {
 
 	ExpectBroadcastMessage(alloc, nil) // on leader election, broadcasts its state
 	// Ask the http server for a new address
-	cidr1 := HTTPGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
+	cidr1 := HTTPPost(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
 	wt.AssertEqualString(t, cidr1, testAddr1+netSuffix, "address")
 
 	// Ask the http server for another address and check it's different
-	cidr2 := HTTPGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container2))
+	cidr2 := HTTPPost(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container2))
 	wt.AssertNotEqualString(t, cidr2, testAddr1+netSuffix, "address")
 
 	// Ask for the first container again and we should get the same address again
-	cidr1a := HTTPGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
+	cidr1a := HTTPPost(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
 	wt.AssertEqualString(t, cidr1a, testAddr1+netSuffix, "address")
 
 	// Now free the first one, and we should get it back when we ask
-	getHTTP("DELETE", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
-	cidr3 := HTTPGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container3))
+	doHTTP("DELETE", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
+	cidr3 := HTTPPost(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container3))
 	wt.AssertEqualString(t, cidr3, testAddr1+netSuffix, "address")
 
 	// Would like to shut down the http server at the end of this test
@@ -97,19 +97,19 @@ func TestBadHttp(t *testing.T) {
 	go listenHTTP(port, alloc)
 
 	ExpectBroadcastMessage(alloc, nil) // on leader election, broadcasts its state
-	cidr1 := HTTPGet(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
+	cidr1 := HTTPPost(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
 	parts := strings.Split(cidr1, "/")
 	testAddr1 := parts[0]
 	// Verb that's not handled
-	resp, err := getHTTP("POST", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
+	resp, err := doHTTP("HEAD", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
 	wt.AssertNoErr(t, err)
 	wt.AssertStatus(t, resp.StatusCode, http.StatusBadRequest, "http response")
 	// Mis-spelled URL
-	resp, err = getHTTP("GET", fmt.Sprintf("http://localhost:%d/xip/%s/", port, containerID))
+	resp, err = doHTTP("POST", fmt.Sprintf("http://localhost:%d/xip/%s/", port, containerID))
 	wt.AssertNoErr(t, err)
 	wt.AssertStatus(t, resp.StatusCode, http.StatusNotFound, "http response")
 	// Malformed URL
-	resp, err = getHTTP("GET", fmt.Sprintf("http://localhost:%d/ip/%s/foo/bar/baz", port, containerID))
+	resp, err = doHTTP("POST", fmt.Sprintf("http://localhost:%d/ip/%s/foo/bar/baz", port, containerID))
 	wt.AssertNoErr(t, err)
 	wt.AssertStatus(t, resp.StatusCode, http.StatusBadRequest, "http response")
 }
@@ -139,17 +139,17 @@ func impTestHTTPCancel(t *testing.T) {
 
 	// Ask the http server for a new address
 	done := make(chan *http.Response)
-	req, _ := http.NewRequest("GET", fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID), nil)
+	req, _ := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID), nil)
 	go func() {
 		res, _ := http.DefaultClient.Do(req)
 		done <- res
 	}()
 
 	time.Sleep(1000 * time.Millisecond)
-	fmt.Println("Cancelling get")
+	fmt.Println("Cancelling allocate")
 	http.DefaultTransport.(*http.Transport).CancelRequest(req)
 	res := <-done
 	if res != nil {
-		wt.Fatalf(t, "Error: Get returned non-nil")
+		wt.Fatalf(t, "Error: Allocate returned non-nil")
 	}
 }
