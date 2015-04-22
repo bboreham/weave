@@ -51,7 +51,7 @@ type Allocator struct {
 	prefixLen          int                        // network prefix length, e.g. 24 for a /24 network
 	ring               *ring.Ring                 // information on ranges owned by all peers
 	spaceSet           space.Set                  // more detail on ranges owned by us
-	owned              map[string][]net.IP        // who owns what address, indexed by container-ID
+	owned              map[string]net.IP          // who owns what address, indexed by container-ID
 	otherPeerNicknames map[router.PeerName]string // so we can map nicknames for tombstoning
 	pendingAllocates   []operation                // held until we get some free space
 	pendingClaims      []operation                // held until we know who owns the space
@@ -82,7 +82,7 @@ func NewAllocator(ourName router.PeerName, subnetCIDR string) (*Allocator, error
 		prefixLen:   ones,
 		// per RFC 1122, don't allocate the first and last address in the subnet
 		ring:               ring.New(utils.Add(subnet.IP, 1), utils.Add(subnet.IP, subnetSize-1), ourName),
-		owned:              make(map[string][]net.IP),
+		owned:              make(map[string]net.IP),
 		otherPeerNicknames: make(map[router.PeerName]string),
 	}
 	return alloc, nil
@@ -232,8 +232,8 @@ func (alloc *Allocator) ContainerDied(ident string) error {
 func (alloc *Allocator) free(ident string) error {
 	errChan := make(chan error)
 	alloc.actionChan <- func() {
-		addrs, found := alloc.owned[ident]
-		for _, addr := range addrs {
+		addr, found := alloc.owned[ident]
+		if found {
 			alloc.spaceSet.Free(addr)
 		}
 		delete(alloc.owned, ident)
@@ -539,15 +539,13 @@ func (alloc *Allocator) reportFreeSpace() {
 // Owned addresses
 
 func (alloc *Allocator) addOwned(ident string, addr net.IP) {
-	alloc.owned[ident] = append(alloc.owned[ident], addr)
+	alloc.owned[ident] = addr
 }
 
 func (alloc *Allocator) findOwner(addr net.IP) string {
-	for ident, addrs := range alloc.owned {
-		for _, ip := range addrs {
-			if ip.Equal(addr) {
-				return ident
-			}
+	for ident, candidate := range alloc.owned {
+		if candidate.Equal(addr) {
+			return ident
 		}
 	}
 	return ""
