@@ -137,6 +137,9 @@ func main() {
 			go handleHTTP(router, httpAddr)
 		}
 	}
+	if httpAddr == "" || allocCIDR == "" {
+		router.NewGossip("IPallocation", &ipam.DummyAllocator{})
+	}
 	handleSignals(router)
 }
 
