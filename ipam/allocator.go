@@ -107,15 +107,17 @@ func (alloc *Allocator) Stop() {
 // Operation life cycle
 
 // Given an operation, try it, and add it to the pending queue if it didn't succeed
-func (alloc *Allocator) doOperation(op operation, ops *[]operation) error {
-	if alloc.shuttingDown {
-		return fmt.Errorf("Allocator shutting down")
+func (alloc *Allocator) doOperation(op operation, ops *[]operation) {
+	alloc.actionChan <- func() {
+		if alloc.shuttingDown {
+			op.Cancel()
+			return
+		}
+		alloc.electLeaderIfNecessary()
+		if !op.Try(alloc) {
+			*ops = append(*ops, op)
+		}
 	}
-	alloc.electLeaderIfNecessary()
-	if !op.Try(alloc) {
-		*ops = append(*ops, op)
-	}
-	return nil
 }
 
 // Given an operation, remove it from the pending queue
@@ -165,51 +167,36 @@ func (alloc *Allocator) tryPendingOps() {
 	}
 }
 
+func hasBeenCancelled(cancelChan <-chan bool) func() bool {
+	return func() bool {
+		select {
+		case <-cancelChan:
+			return true
+		default:
+			return false
+		}
+	}
+}
+
 // Actor client API
 
 // Allocate (Sync) - get IP address for container with given name
 // if there isn't any space we block indefinitely
 func (alloc *Allocator) Allocate(ident string, cancelChan <-chan bool) net.IP {
-	resultChan := make(chan net.IP, 1)
-	op := &allocate{resultChan: resultChan, ident: ident}
-
-	alloc.actionChan <- func() {
-		if err := alloc.doOperation(op, &alloc.pendingAllocates); err != nil {
-			resultChan <- nil
-		}
-	}
-
-	select {
-	case result := <-resultChan:
-		return result
-	case <-cancelChan:
-		alloc.actionChan <- func() {
-			alloc.cancelOp(op, &alloc.pendingAllocates)
-		}
-		return <-resultChan
-	}
+	resultChan := make(chan net.IP)
+	op := &allocate{resultChan: resultChan, ident: ident,
+		hasBeenCancelled: hasBeenCancelled(cancelChan)}
+	alloc.doOperation(op, &alloc.pendingAllocates)
+	return <-resultChan
 }
 
 // Claim an address that we think we should own (Sync)
 func (alloc *Allocator) Claim(ident string, addr net.IP, cancelChan <-chan bool) error {
-	resultChan := make(chan error, 1)
-	op := &claim{resultChan: resultChan, ident: ident, addr: addr}
-
-	alloc.actionChan <- func() {
-		if err := alloc.doOperation(op, &alloc.pendingClaims); err != nil {
-			resultChan <- err
-		}
-	}
-
-	select {
-	case result := <-resultChan:
-		return result
-	case <-cancelChan:
-		alloc.actionChan <- func() {
-			alloc.cancelOp(op, &alloc.pendingClaims)
-		}
-		return <-resultChan
-	}
+	resultChan := make(chan error)
+	op := &claim{resultChan: resultChan, ident: ident, addr: addr,
+		hasBeenCancelled: hasBeenCancelled(cancelChan)}
+	alloc.doOperation(op, &alloc.pendingClaims)
+	return <-resultChan
 }
 
 // Free (Sync) - release IP address for container with given name
