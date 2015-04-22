@@ -8,13 +8,19 @@ import (
 )
 
 type claim struct {
-	resultChan chan<- error
-	ident      string
-	addr       net.IP
+	resultChan       chan<- error
+	hasBeenCancelled func() bool
+	ident            string
+	addr             net.IP
 }
 
 // Try returns true for success (or failure), false if we need to try again later
 func (c *claim) Try(alloc *Allocator) bool {
+	if (c.hasBeenCancelled)() {
+		c.Cancel()
+		return true
+	}
+
 	if !alloc.ring.Contains(c.addr) {
 		// Address not within our universe; assume user knows what they are doing
 		alloc.infof("Ignored address %s claimed by %s - not in our universe\n", c.addr, c.ident)

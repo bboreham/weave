@@ -6,12 +6,18 @@ import (
 )
 
 type allocate struct {
-	resultChan chan<- net.IP
-	ident      string
+	resultChan       chan<- net.IP
+	hasBeenCancelled func() bool
+	ident            string
 }
 
 // Try returns true if the request is completed, false if pending
 func (g *allocate) Try(alloc *Allocator) bool {
+	if g.hasBeenCancelled() {
+		g.Cancel()
+		return true
+	}
+
 	// If we have previously stored an address for this container, return it.
 	// FIXME: the data structure allows multiple addresses per (allocator per) ident but the code doesn't
 	if addrs, found := alloc.owned[g.ident]; found && len(addrs) > 0 {
