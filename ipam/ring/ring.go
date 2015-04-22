@@ -38,7 +38,7 @@ var (
 	ErrNotSorted        = errors.New("Ring not sorted")
 	ErrTokenRepeated    = errors.New("Token appears twice in ring")
 	ErrTokenOutOfRange  = errors.New("Token is out of range")
-	ErrDifferentSubnets = errors.New("Cannot merge gossip for different subnet!")
+	ErrDifferentSubnets = errors.New("IP Allocator with different subnet detected")
 	ErrNewerVersion     = errors.New("Received new version for entry I own!")
 	ErrInvalidEntry     = errors.New("Received invalid state update!")
 	ErrEntryInMyRange   = errors.New("Received new entry in my range!")
