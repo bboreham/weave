@@ -388,6 +388,13 @@ func (alloc *Allocator) actorLoop(actionChan <-chan func()) {
 func (alloc *Allocator) string() string {
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "Allocator subnet %s+%d\n", alloc.subnetStart, alloc.subnetSize)
+
+	localFreeSpace := alloc.spaceSet.NumFreeAddresses()
+	remoteFreeSpace := alloc.ring.TotalRemoteFree()
+	percentFree := 100 * float64(localFreeSpace+remoteFreeSpace) / float64(alloc.subnetSize)
+	fmt.Fprintf(&buf, "  Free IPs: ~%.1f%%, %d local, ~%d remote\n",
+		percentFree, localFreeSpace, remoteFreeSpace)
+
 	alloc.ring.FprintWithNicknames(&buf, alloc.otherPeerNicknames)
 	fmt.Fprintf(&buf, alloc.spaceSet.String())
 	if len(alloc.pendingAllocates)+len(alloc.pendingClaims) > 0 {

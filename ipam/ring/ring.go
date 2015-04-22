@@ -98,6 +98,19 @@ func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
 	return ring
 }
 
+// TotalRemoteFree returns the approximate number of free IPs
+// on other hosts.
+func (r *Ring) TotalRemoteFree() uint32 {
+	entries := r.Entries.filteredEntries()
+	result := uint32(0)
+	for _, entry := range entries {
+		if entry.Peer != r.Peername {
+			result += entry.Free
+		}
+	}
+	return result
+}
+
 // Returns the distance between two tokens on this ring, dealing
 // with ranges which cross the origin
 func (r *Ring) distance(start, end uint32) uint32 {
@@ -407,10 +420,20 @@ func (r *Ring) ClaimItAll() {
 }
 
 func (r *Ring) FprintWithNicknames(w io.Writer, m map[router.PeerName]string) {
+	fmt.Fprintf(w, "Ring [%s, %s)\n", utils.IntIP4(r.Start), utils.IntIP4(r.End))
 	for _, entry := range r.Entries {
-		nickname := m[entry.Peer]
-		fmt.Fprintf(w, "%s -> %s(%s) (%d, %d, %d)\n", utils.IntIP4(entry.Token),
-			entry.Peer, nickname, entry.Tombstone, entry.Version, entry.Free)
+		nickname, found := m[entry.Peer]
+		if found {
+			nickname = fmt.Sprintf(" (%s)", nickname)
+		}
+
+		var tombstoneStr = ""
+		if entry.Tombstone != 0 {
+			tombstoneStr = fmt.Sprintf("tombstone: %d, ", entry.Tombstone)
+		}
+
+		fmt.Fprintf(w, "  %s -> %s%s (%sversion: %d, free: %d)\n", utils.IntIP4(entry.Token),
+			entry.Peer, nickname, tombstoneStr, entry.Version, entry.Free)
 	}
 }
 
