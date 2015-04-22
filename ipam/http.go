@@ -72,7 +72,7 @@ func (alloc *Allocator) HandleHTTP(mux *http.ServeMux) {
 			} else if err = alloc.Claim(ident, ip, closedChan); err != nil {
 				badRequest(w, fmt.Errorf("Unable to claim IP address %s: %s", ip, err))
 			}
-		case "GET": // caller requests one address for a container
+		case "POST": // caller requests one address for a container
 			ident, err := parseURL(r.URL.Path)
 			if err != nil {
 				badRequest(w, err)

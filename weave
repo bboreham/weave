@@ -542,7 +542,7 @@ get_ipam_cidr() {
                 return 1
                 ;;
         esac
-        CIDR_ARGS="$(http_call $CONTAINER_NAME $HTTP_PORT GET /ip/$CONTAINER)"
+        CIDR_ARGS="$(http_call $CONTAINER_NAME $HTTP_PORT POST /ip/$CONTAINER)"
         if [ "$CIDR_ARGS" = "404 page not found" ] ; then
             echo "At least one CIDR is required on the command-line if IPAM has not been configured." >&2
             return 1
