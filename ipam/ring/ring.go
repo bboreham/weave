@@ -460,6 +460,10 @@ func (r *Ring) String() string {
 // how many free ips are in a given range, so that ChoosePeerToAskForSpace
 // can make more intelligent decisions.
 func (r *Ring) ReportFree(startIP net.IP, free uint32) {
+	r.assertInvariants()
+	defer r.assertInvariants()
+	defer r.updateExportedVariables()
+
 	start := utils.IP4int(startIP)
 	entries := r.Entries.filteredEntries() // We don't want to report free on tombstones
 
