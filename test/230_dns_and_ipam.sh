@@ -12,8 +12,8 @@ for host in $HOST1 $HOST2; do
     docker_on $host rm -f c1 c2 || true
 done
 
-weave_on $HOST1 launch -alloc $UNIVERSE
-weave_on $HOST2 launch -alloc $UNIVERSE $HOST1
+weave_on $HOST1 launch -iprange $UNIVERSE
+weave_on $HOST2 launch -iprange $UNIVERSE $HOST1
 
 weave_on $HOST1 launch-dns 10.2.254.1/24
 weave_on $HOST2 launch-dns 10.2.254.2/24

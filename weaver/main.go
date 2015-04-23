@@ -49,7 +49,7 @@ func main() {
 		peers       []string
 		bufSzMB     int
 		httpAddr    string
-		allocCIDR   string
+		iprangeCIDR string
 		apiPath     string
 	)
 
@@ -65,7 +65,7 @@ func main() {
 	flag.IntVar(&config.ConnLimit, "connlimit", 30, "connection limit (0 for unlimited)")
 	flag.IntVar(&bufSzMB, "bufsz", 8, "capture buffer size in MB")
 	flag.StringVar(&httpAddr, "httpaddr", fmt.Sprintf(":%d", weave.HTTPPort), "address to bind HTTP interface to (disabled if blank, absolute path indicates unix domain socket)")
-	flag.StringVar(&allocCIDR, "alloc", "", "CIDR of IP address space to allocate within")
+	flag.StringVar(&iprangeCIDR, "iprange", "", "CIDR of IP address range to allocate within")
 	flag.StringVar(&apiPath, "api", "unix:///var/run/docker.sock", "Path to Docker API socket")
 	flag.Parse()
 	peers = flag.Args()
@@ -130,14 +130,14 @@ func main() {
 	router.Start()
 	initiateConnections(router, peers)
 	if httpAddr != "" {
-		if allocCIDR != "" {
-			allocator := createAllocator(router, apiPath, allocCIDR)
+		if iprangeCIDR != "" {
+			allocator := createAllocator(router, apiPath, iprangeCIDR)
 			go handleHTTP(router, httpAddr, allocator)
 		} else {
 			go handleHTTP(router, httpAddr)
 		}
 	}
-	if httpAddr == "" || allocCIDR == "" {
+	if httpAddr == "" || iprangeCIDR == "" {
 		router.NewGossip("IPallocation", &ipam.DummyAllocator{})
 	}
 	handleSignals(router)
@@ -177,8 +177,8 @@ func initiateConnections(router *weave.Router, peers []string) {
 	}
 }
 
-func createAllocator(router *weave.Router, apiPath string, allocCIDR string) *ipam.Allocator {
-	allocator, err := ipam.NewAllocator(router.Ourself.Peer.Name, allocCIDR)
+func createAllocator(router *weave.Router, apiPath string, iprangeCIDR string) *ipam.Allocator {
+	allocator, err := ipam.NewAllocator(router.Ourself.Peer.Name, iprangeCIDR)
 	if err != nil {
 		log.Fatal(err)
 	}

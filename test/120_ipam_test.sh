@@ -12,8 +12,8 @@ for HOST in $HOST1 $HOST2; do
     docker_on $HOST rm -f c1 c2 || true
 done
 
-weave_on $HOST1 launch -alloc $UNIVERSE
-weave_on $HOST2 launch -alloc $UNIVERSE $HOST1
+weave_on $HOST1 launch -iprange $UNIVERSE
+weave_on $HOST2 launch -iprange $UNIVERSE $HOST1
 
 weave_on $HOST1 run -t --name=c1 ubuntu
 weave_on $HOST2 run -t --name=c2 ubuntu

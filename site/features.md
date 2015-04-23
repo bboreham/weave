@@ -60,7 +60,7 @@ Weave can assign unique IP addresses to each container across the
 network.  To make this work, weave must be told what range of
 addresses to allocate from, for example:
 
-    host1# weave launch -alloc 10.2.3.0/24
+    host1# weave launch -iprange 10.2.3.0/24
 
 The `run`, `start`, `attach` and `expose` commands will then allocate
 an address automatically if none is specified, i.e.:
@@ -70,8 +70,8 @@ an address automatically if none is specified, i.e.:
 Weave uses the Docker Events API to learn when a container has exited
 and hence can release its IP address.
 
-You must specify the same range with `-alloc` on each host, and you
-cannot mix weaves started with and without -alloc.
+You must specify the same range with `-iprange` on each host, and you
+cannot mix weaves started with and without -iprange.
 
 You may wish to `weave stop` and re-launch to change some config or to
 upgrade to a new version; provided the underlying protocol hasn't
