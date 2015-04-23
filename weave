@@ -874,7 +874,7 @@ case "$COMMAND" in
         ;;
     reset)
         [ $# -eq 0 ] || usage
-        http_call $CONTAINER_NAME $HTTP_PORT POST /tombstone-self || true
+        http_call $CONTAINER_NAME $HTTP_PORT POST /tombstone-self >/dev/null 2>&1 || true
         docker stop  $CONTAINER_NAME     >/dev/null 2>&1 || true
         docker stop  $DNS_CONTAINER_NAME >/dev/null 2>&1 || true
         docker rm -f $CONTAINER_NAME     >/dev/null 2>&1 || true
