@@ -34,6 +34,10 @@ type operation interface {
 	Cancel()
 
 	String() string
+
+	// Does this operation pertain to the given container id?
+	// Used for tidying up pending operations when containers die.
+	ForContainer(ident string) bool
 }
 
 // Allocator brings together Ring and space.Set, and does the
@@ -135,11 +139,26 @@ func (alloc *Allocator) cancelOp(op operation, ops *[]operation) {
 	}
 }
 
+// Cancel all operations in a queue
 func (alloc *Allocator) cancelOps(ops *[]operation) {
 	for _, op := range *ops {
 		op.Cancel()
 	}
 	*ops = []operation{}
+}
+
+// Cancel all operations for a given container id, returns true
+// if we found any.
+func (alloc *Allocator) cancelOpsFor(ops *[]operation, ident string) bool {
+	var found bool
+	for i, op := range *ops {
+		if op.ForContainer(ident) {
+			found = true
+			op.Cancel()
+			*ops = append((*ops)[:i], (*ops)[i+1:]...)
+		}
+	}
+	return found
 }
 
 // Try all pending operations
@@ -200,16 +219,36 @@ func (alloc *Allocator) Claim(ident string, addr net.IP, cancelChan <-chan bool)
 }
 
 // Free (Sync) - release IP address for container with given name
-func (alloc *Allocator) Free(ident string, addr net.IP) error {
-	resultChan := make(chan error)
+func (alloc *Allocator) Free(ident string) error {
+	return alloc.free(ident)
+}
+
+// ContainerDied is provided to satisfy the updater interface; does a free underneath.  Async.
+func (alloc *Allocator) ContainerDied(ident string) error {
+	alloc.debugln("Container", ident, "died; releasing addresses")
+	return alloc.free(ident)
+}
+
+func (alloc *Allocator) free(ident string) error {
+	errChan := make(chan error)
 	alloc.actionChan <- func() {
-		if alloc.removeOwned(ident, addr) {
-			resultChan <- alloc.spaceSet.Free(addr)
-		} else {
-			resultChan <- fmt.Errorf("free: %s not owned by %s", addr, ident)
+		addrs, found := alloc.owned[ident]
+		for _, addr := range addrs {
+			alloc.spaceSet.Free(addr)
 		}
+		delete(alloc.owned, ident)
+
+		// Also remove any pending ops
+		found = alloc.cancelOpsFor(&alloc.pendingAllocates, ident) || found
+		found = alloc.cancelOpsFor(&alloc.pendingClaims, ident) || found
+
+		if !found {
+			errChan <- fmt.Errorf("No addresses for %s", ident)
+			return
+		}
+		errChan <- nil
 	}
-	return <-resultChan
+	return <-errChan
 }
 
 // Sync.
@@ -219,18 +258,6 @@ func (alloc *Allocator) String() string {
 		resultChan <- alloc.string()
 	}
 	return <-resultChan
-}
-
-// ContainerDied is provided to satisfy the updater interface; does a free underneath.  Async.
-func (alloc *Allocator) ContainerDied(ident string) error {
-	alloc.debugln("Container", ident, "died; releasing addresses")
-	alloc.actionChan <- func() {
-		for _, ip := range alloc.owned[ident] {
-			alloc.spaceSet.Free(ip)
-		}
-		delete(alloc.owned, ident)
-	}
-	return nil // this is to satisfy the ContainerObserver interface
 }
 
 // Shutdown (Sync)
@@ -524,18 +551,6 @@ func (alloc *Allocator) findOwner(addr net.IP) string {
 		}
 	}
 	return ""
-}
-
-func (alloc *Allocator) removeOwned(ident string, addr net.IP) bool {
-	if addrs, found := alloc.owned[ident]; found {
-		for i, ip := range addrs {
-			if ip.Equal(addr) {
-				alloc.owned[ident] = append(addrs[:i], addrs[i+1:]...)
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // Logging

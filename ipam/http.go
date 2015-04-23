@@ -82,14 +82,10 @@ func (alloc *Allocator) HandleHTTP(mux *http.ServeMux) {
 				badRequest(w, fmt.Errorf("Allocator shutting down"))
 			}
 		case "DELETE": // opposite of PUT for one specific address or all addresses
-			ident, ipStr, err := parseURLWithIP(r.URL.Path)
+			ident, err := parseURL(r.URL.Path)
 			if err != nil {
 				badRequest(w, err)
-			} else if ipStr == "*" {
-				alloc.ContainerDied(ident)
-			} else if ip := net.ParseIP(ipStr); ip == nil {
-				invalidIP(w, ipStr)
-			} else if err = alloc.Free(ident, ip); err != nil {
+			} else if err = alloc.Free(ident); err != nil {
 				badRequest(w, err)
 			}
 		default:

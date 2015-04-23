@@ -48,3 +48,7 @@ func (g *allocate) Cancel() {
 func (g *allocate) String() string {
 	return fmt.Sprintf("Allocate for %s", g.ident)
 }
+
+func (g *allocate) ForContainer(ident string) bool {
+	return g.ident == ident
+}
