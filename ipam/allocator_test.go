@@ -239,7 +239,6 @@ func TestTombstoneEveryone(t *testing.T) {
 		cidr = "10.0.1.7/22"
 	)
 	allocs, router := makeNetworkOfAllocators(3, cidr)
-	defer stopNetworkOfAllocators(allocs)
 	alloc1 := allocs[0]
 	alloc2 := allocs[1]
 	alloc3 := allocs[2] // This will be 'master' and get the first range
@@ -263,6 +262,7 @@ func TestTombstoneEveryone(t *testing.T) {
 
 	addr = alloc1.Allocate("foo", nil)
 	wt.AssertTrue(t, addr != nil, "Failed to get address")
+	alloc1.Stop()
 }
 
 func TestFakeRouterSimple(t *testing.T) {
