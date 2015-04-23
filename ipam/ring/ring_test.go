@@ -7,7 +7,6 @@ import (
 	"net"
 	"sort"
 	"testing"
-	"time"
 
 	"github.com/weaveworks/weave/common"
 	"github.com/weaveworks/weave/ipam/utils"
@@ -325,6 +324,19 @@ func TestGossip(t *testing.T) {
 	assertRing(ring2, []*entry{{Token: start, Peer: peer1name, Free: 255}})
 }
 
+func TestGossipSkew(t *testing.T) {
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring2 := New(ipStart, ipEnd, peer2name)
+	ring1.ClaimItAll()
+	wt.AssertSuccess(t, ring2.UpdateRing(ring1.GossipState()))
+
+	now = func() int64 { return 0 }
+	gossip := ring1.GossipState()
+
+	now = func() int64 { return 2 * maxClockSkew }
+	wt.AssertTrue(t, ring2.UpdateRing(gossip) == ErrClockSkew, "")
+}
+
 func TestFindFree(t *testing.T) {
 	ring1 := New(ipStart, ipEnd, peer1name)
 
@@ -336,7 +348,7 @@ func TestFindFree(t *testing.T) {
 	wt.AssertTrue(t, err == ErrNoFreeSpace, "Expected ErrNoFreeSpace")
 
 	// We shouldn't return outselves
-	ring1.ReportFree(ipStart, 10)
+	ring1.ReportFree(map[uint32]uint32{start: 10})
 	_, err = ring1.ChoosePeerToAskForSpace()
 	wt.AssertTrue(t, err == ErrNoFreeSpace, "Expected ErrNoFreeSpace")
 
@@ -356,6 +368,22 @@ func TestFindFree(t *testing.T) {
 	peer, err = ring1.ChoosePeerToAskForSpace()
 	wt.AssertSuccess(t, err)
 	wt.AssertEquals(t, peer, peer2name)
+}
+
+func TestReportFree(t *testing.T) {
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring2 := New(ipStart, ipEnd, peer2name)
+
+	ring1.ClaimItAll()
+	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer2name)
+	ring1.TombstonePeer(peer1name, 10)
+	wt.AssertSuccess(t, ring2.merge(*ring1))
+
+	freespace := make(map[uint32]uint32)
+	for _, r := range ring2.OwnedRanges() {
+		freespace[utils.IP4int(r.Start)] = 0
+	}
+	ring2.ReportFree(freespace)
 }
 
 func TestMisc(t *testing.T) {
@@ -506,8 +534,10 @@ func TestTombstoneDelete(t *testing.T) {
 	ring1 := New(ipStart, ipEnd, peer1name)
 	ring1.ClaimItAll()
 	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer2name)
+
+	now = func() int64 { return 0 }
 	wt.AssertSuccess(t, ring1.TombstonePeer(peer2name, 10))
-	ring1.ExpireTombstones(time.Now().Unix() + 15)
+	ring1.ExpireTombstones(15)
 	wt.AssertEquals(t, ring1.Entries, entries{{Token: start, Peer: peer1name, Version: 1, Free: 128}})
 }
 

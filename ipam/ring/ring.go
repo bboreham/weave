@@ -19,8 +19,14 @@ import (
 	"github.com/weaveworks/weave/router"
 )
 
+const maxClockSkew int64 = int64(time.Hour)
+
+// Hook for replacing for testing
+var now = func() int64 { return time.Now().Unix() }
+
 // Ring represents the ring itself
 type Ring struct {
+	Now        int64           // When we send this ring to someone we include the time to help detect clock skew
 	Start, End uint32          // [min, max) tokens in this ring.  Due to wrapping, min == max (effectively)
 	Peername   router.PeerName // name of peer owning this ring instance
 	Entries    entries         // list of entries sorted by token
@@ -46,6 +52,7 @@ var (
 	ErrTooMuchFreeSpace = errors.New("Entry reporting too much free space!")
 	ErrInvalidTimeout   = errors.New("dt must be greater than 0")
 	ErrNotFound         = errors.New("No entries for peer found")
+	ErrClockSkew        = errors.New("Large clock skew detected; refusing to merge.")
 )
 
 func (r *Ring) checkInvariants() error {
@@ -93,7 +100,7 @@ func New(startIP, endIP net.IP, peer router.PeerName) *Ring {
 	start, end := utils.IP4int(startIP), utils.IP4int(endIP)
 	utils.Assert(start < end, "Start needs to be less than end!")
 
-	ring := &Ring{start, end, peer, make([]*entry, 0)}
+	ring := &Ring{Start: start, End: end, Peername: peer, Entries: make([]*entry, 0)}
 	ring.updateExportedVariables()
 	return ring
 }
@@ -333,6 +340,11 @@ func (r *Ring) UpdateRing(msg []byte) error {
 		return err
 	}
 
+	skew := now() - gossipedRing.Now
+	if -maxClockSkew > skew || skew > maxClockSkew {
+		return ErrClockSkew
+	}
+
 	if err := r.merge(gossipedRing); err != nil {
 		return err
 	}
@@ -343,6 +355,7 @@ func (r *Ring) UpdateRing(msg []byte) error {
 func (r *Ring) GossipState() []byte {
 	buf := new(bytes.Buffer)
 	enc := gob.NewEncoder(buf)
+	r.Now = now()
 	if err := enc.Encode(r); err != nil {
 		panic(err)
 	}
@@ -446,29 +459,45 @@ func (r *Ring) String() string {
 // ReportFree is used by the allocator to tell the ring
 // how many free ips are in a given range, so that ChoosePeerToAskForSpace
 // can make more intelligent decisions.
-func (r *Ring) ReportFree(startIP net.IP, free uint32) {
-	start := utils.IP4int(startIP)
+func (r *Ring) ReportFree(freespace map[uint32]uint32) {
+	r.assertInvariants()
+	defer r.assertInvariants()
+	defer r.updateExportedVariables()
+
+	utils.Assert(!r.Empty(), "Cannot ReportFree on empty ring!")
 	entries := r.Entries.filteredEntries() // We don't want to report free on tombstones
 
-	// Look for entry
-	i := sort.Search(len(entries), func(j int) bool {
-		return entries[j].Token >= start
-	})
-
-	utils.Assert(i < len(entries) && entries[i].Token == start &&
-		entries[i].Peer == r.Peername, "Trying to report free on space I don't own")
-
-	// Check we're not reporting more space than the range
-	entry, next := entries.entry(i), entries.entry(i+1)
-	maxSize := r.distance(entry.Token, next.Token)
-	utils.Assert(free <= maxSize, "Trying to report more free space than possible")
-
-	if entries[i].Free == free {
-		return
+	// As OwnedRanges splits around the origin, we need to
+	// detect that here and fix up freespace
+	if free, found := freespace[r.Start]; found && entries.entry(0).Token != r.Start {
+		lastToken := entries.entry(-1).Token
+		prevFree, found := freespace[lastToken]
+		utils.Assert(found, "Reporting freespace on origin, and not preceeding token!")
+		freespace[lastToken] = prevFree + free
+		delete(freespace, r.Start)
 	}
 
-	entries[i].Free = free
-	entries[i].Version++
+	for start, free := range freespace {
+		// Look for entry
+		i := sort.Search(len(entries), func(j int) bool {
+			return entries[j].Token >= start
+		})
+
+		utils.Assert(i < len(entries) && entries[i].Token == start &&
+			entries[i].Peer == r.Peername, "Trying to report free on space I don't own")
+
+		// Check we're not reporting more space than the range
+		entry, next := entries.entry(i), entries.entry(i+1)
+		maxSize := r.distance(entry.Token, next.Token)
+		utils.Assert(free <= maxSize, "Trying to report more free space than possible")
+
+		if entries[i].Free == free {
+			return
+		}
+
+		entries[i].Free = free
+		entries[i].Version++
+	}
 }
 
 // ChoosePeerToAskForSpace chooses a weighted-random peer to ask
@@ -525,7 +554,7 @@ func (r *Ring) TombstonePeer(peer router.PeerName, dt time.Duration) error {
 	}
 
 	found := false
-	absTimeout := time.Now().Unix() + int64(dt)
+	absTimeout := now() + int64(dt)
 
 	for _, entry := range r.Entries {
 		if entry.Peer == peer {

@@ -269,7 +269,7 @@ func (alloc *Allocator) Shutdown() {
 		alloc.shuttingDown = true
 		alloc.cancelOps(&alloc.pendingClaims)
 		alloc.cancelOps(&alloc.pendingAllocates)
-		alloc.ring.TombstonePeer(alloc.ourName, 100)
+		alloc.ring.TombstonePeer(alloc.ourName, tombstoneTimeout)
 		alloc.gossip.GossipBroadcast(alloc.Gossip())
 		alloc.spaceSet.Clear()
 		time.Sleep(100 * time.Millisecond)
@@ -531,10 +531,15 @@ func (alloc *Allocator) assertInvariants() {
 
 func (alloc *Allocator) reportFreeSpace() {
 	spaces := alloc.spaceSet.Spaces()
-
-	for _, s := range spaces {
-		alloc.ring.ReportFree(s.Start, s.NumFreeAddresses())
+	if len(spaces) == 0 {
+		return
 	}
+
+	freespace := make(map[uint32]uint32)
+	for _, s := range spaces {
+		freespace[utils.IP4int(s.Start)] = s.NumFreeAddresses()
+	}
+	alloc.ring.ReportFree(freespace)
 }
 
 // Owned addresses
