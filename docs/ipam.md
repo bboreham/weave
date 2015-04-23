@@ -130,6 +130,13 @@ In more detail:
      owned by the peer requesting the space, and one at the end of the
      hole owned by the requestee.
   4. It has no space.
+- Tombstones are designed to expire after 2 weeks.  Host clocks need
+  to be reasonably within sync; if the host clocks differ by more than
+  2 weeks, peer deletion will behave inconsistently. Similarly, you
+  should not allow network partitions to persist for longer than 2 weeks,
+  as you may see previously deleted hosts reappearing.  Nodes gossip
+  their current time, and if a receiving host detects more than 1 hour
+  of clock skew, the gossip will be rejected and the connection dropped.
 
 ## Initialisation
 
