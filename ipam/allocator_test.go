@@ -246,9 +246,6 @@ func TestTombstoneEveryone(t *testing.T) {
 	addr := alloc2.Allocate("foo", nil)
 	wt.AssertTrue(t, addr != nil, "Failed to get address")
 
-	addr = alloc1.Allocate("foo2", nil)
-	wt.AssertTrue(t, addr != nil, "Failed to get address")
-
 	addr = alloc3.Allocate("bar", nil)
 	wt.AssertTrue(t, addr != nil, "Failed to get address")
 
@@ -261,7 +258,7 @@ func TestTombstoneEveryone(t *testing.T) {
 	wt.AssertSuccess(t, alloc1.TombstonePeer(alloc2.ourName.String()))
 	wt.AssertSuccess(t, alloc1.TombstonePeer(alloc3.ourName.String()))
 
-	wt.AssertTrue(t, alloc1.ring.Empty(), "Ring not empy!")
+	wt.AssertTrue(t, alloc1.ring.Empty(), "Ring not empty!")
 
 	addr = alloc1.Allocate("foo", nil)
 	wt.AssertTrue(t, addr != nil, "Failed to get address")

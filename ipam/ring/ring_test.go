@@ -348,7 +348,7 @@ func TestFindFree(t *testing.T) {
 	wt.AssertTrue(t, err == ErrNoFreeSpace, "Expected ErrNoFreeSpace")
 
 	// We shouldn't return outselves
-	ring1.ReportFree(ipStart, 10)
+	ring1.ReportFree(map[uint32]uint32{start: 10})
 	_, err = ring1.ChoosePeerToAskForSpace()
 	wt.AssertTrue(t, err == ErrNoFreeSpace, "Expected ErrNoFreeSpace")
 
@@ -368,6 +368,22 @@ func TestFindFree(t *testing.T) {
 	peer, err = ring1.ChoosePeerToAskForSpace()
 	wt.AssertSuccess(t, err)
 	wt.AssertEquals(t, peer, peer2name)
+}
+
+func TestReportFree(t *testing.T) {
+	ring1 := New(ipStart, ipEnd, peer1name)
+	ring2 := New(ipStart, ipEnd, peer2name)
+
+	ring1.ClaimItAll()
+	ring1.GrantRangeToHost(ipMiddle, ipEnd, peer2name)
+	ring1.TombstonePeer(peer1name, 10)
+	wt.AssertSuccess(t, ring2.merge(*ring1))
+
+	freespace := make(map[uint32]uint32)
+	for _, r := range ring2.OwnedRanges() {
+		freespace[utils.IP4int(r.Start)] = 0
+	}
+	ring2.ReportFree(freespace)
 }
 
 func TestMisc(t *testing.T) {

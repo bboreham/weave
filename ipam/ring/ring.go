@@ -459,33 +459,45 @@ func (r *Ring) String() string {
 // ReportFree is used by the allocator to tell the ring
 // how many free ips are in a given range, so that ChoosePeerToAskForSpace
 // can make more intelligent decisions.
-func (r *Ring) ReportFree(startIP net.IP, free uint32) {
+func (r *Ring) ReportFree(freespace map[uint32]uint32) {
 	r.assertInvariants()
 	defer r.assertInvariants()
 	defer r.updateExportedVariables()
 
-	start := utils.IP4int(startIP)
+	utils.Assert(!r.Empty(), "Cannot ReportFree on empty ring!")
 	entries := r.Entries.filteredEntries() // We don't want to report free on tombstones
 
-	// Look for entry
-	i := sort.Search(len(entries), func(j int) bool {
-		return entries[j].Token >= start
-	})
-
-	utils.Assert(i < len(entries) && entries[i].Token == start &&
-		entries[i].Peer == r.Peername, "Trying to report free on space I don't own")
-
-	// Check we're not reporting more space than the range
-	entry, next := entries.entry(i), entries.entry(i+1)
-	maxSize := r.distance(entry.Token, next.Token)
-	utils.Assert(free <= maxSize, "Trying to report more free space than possible")
-
-	if entries[i].Free == free {
-		return
+	// As OwnedRanges splits around the origin, we need to
+	// detect that here and fix up freespace
+	if free, found := freespace[r.Start]; found && entries.entry(0).Token != r.Start {
+		lastToken := entries.entry(-1).Token
+		prevFree, found := freespace[lastToken]
+		utils.Assert(found, "Reporting freespace on origin, and not preceeding token!")
+		freespace[lastToken] = prevFree + free
+		delete(freespace, r.Start)
 	}
 
-	entries[i].Free = free
-	entries[i].Version++
+	for start, free := range freespace {
+		// Look for entry
+		i := sort.Search(len(entries), func(j int) bool {
+			return entries[j].Token >= start
+		})
+
+		utils.Assert(i < len(entries) && entries[i].Token == start &&
+			entries[i].Peer == r.Peername, "Trying to report free on space I don't own")
+
+		// Check we're not reporting more space than the range
+		entry, next := entries.entry(i), entries.entry(i+1)
+		maxSize := r.distance(entry.Token, next.Token)
+		utils.Assert(free <= maxSize, "Trying to report more free space than possible")
+
+		if entries[i].Free == free {
+			return
+		}
+
+		entries[i].Free = free
+		entries[i].Version++
+	}
 }
 
 // ChoosePeerToAskForSpace chooses a weighted-random peer to ask
