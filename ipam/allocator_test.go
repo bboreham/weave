@@ -246,6 +246,9 @@ func TestTombstoneEveryone(t *testing.T) {
 	addr := alloc2.Allocate("foo", nil)
 	wt.AssertTrue(t, addr != nil, "Failed to get address")
 
+	addr = alloc1.Allocate("foo2", nil)
+	wt.AssertTrue(t, addr != nil, "Failed to get address")
+
 	addr = alloc3.Allocate("bar", nil)
 	wt.AssertTrue(t, addr != nil, "Failed to get address")
 
