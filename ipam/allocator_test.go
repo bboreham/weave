@@ -47,7 +47,7 @@ func TestAllocFree(t *testing.T) {
 	wt.AssertEqualString(t, addr1a.String(), testAddr1, "address")
 
 	// Now free the first one, and we should get it back when we ask
-	alloc.Free(container1, net.ParseIP(testAddr1))
+	wt.AssertSuccess(t, alloc.Free(container1))
 	addr3 := alloc.Allocate(container3, nil)
 	wt.AssertEqualString(t, addr3.String(), testAddr1, "address")
 
@@ -129,7 +129,7 @@ func TestAllocatorClaim(t *testing.T) {
 	alloc.Allocate(container2, nil)
 
 	// Now free the first one, and try to claim it
-	alloc.Free(container1, net.ParseIP(testAddr1))
+	wt.AssertSuccess(t, alloc.Free(container1))
 	err := alloc.Claim(container3, addr1, nil)
 	wt.AssertNoErr(t, err)
 	addr3 := alloc.Allocate(container3, nil)
@@ -375,10 +375,7 @@ func TestAllocatorFuzz(t *testing.T) {
 		alloc := allocs[res.alloc]
 		//common.Info.Printf("Freeing %s on allocator %d", addr, res.alloc)
 
-		err := alloc.Free(res.name, net.ParseIP(addr))
-		if err != nil {
-			panic(fmt.Sprintf("Cound not free address %s", addr))
-		}
+		wt.AssertSuccess(t, alloc.Free(res.name))
 	}
 
 	// Do a Allocate on an existing container & allocator

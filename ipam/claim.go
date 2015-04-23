@@ -69,3 +69,7 @@ func (c *claim) Cancel() {
 func (c *claim) String() string {
 	return fmt.Sprintf("Claim %s -> %s", c.ident, c.addr)
 }
+
+func (c *claim) ForContainer(ident string) bool {
+	return c.ident == ident
+}

@@ -75,7 +75,7 @@ func TestHttp(t *testing.T) {
 	wt.AssertEqualString(t, cidr1a, testAddr1+netSuffix, "address")
 
 	// Now free the first one, and we should get it back when we ask
-	doHTTP("DELETE", fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, testAddr1))
+	doHTTP("DELETE", fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID))
 	cidr3 := HTTPPost(t, fmt.Sprintf("http://localhost:%d/ip/%s", port, container3))
 	wt.AssertEqualString(t, cidr3, testAddr1+netSuffix, "address")
 

@@ -19,9 +19,8 @@ func (g *allocate) Try(alloc *Allocator) bool {
 	}
 
 	// If we have previously stored an address for this container, return it.
-	// FIXME: the data structure allows multiple addresses per (allocator per) ident but the code doesn't
-	if addrs, found := alloc.owned[g.ident]; found && len(addrs) > 0 {
-		g.resultChan <- addrs[0]
+	if addr, found := alloc.owned[g.ident]; found {
+		g.resultChan <- addr
 		return true
 	}
 
@@ -47,4 +46,8 @@ func (g *allocate) Cancel() {
 
 func (g *allocate) String() string {
 	return fmt.Sprintf("Allocate for %s", g.ident)
+}
+
+func (g *allocate) ForContainer(ident string) bool {
+	return g.ident == ident
 }

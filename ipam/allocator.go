@@ -34,6 +34,10 @@ type operation interface {
 	Cancel()
 
 	String() string
+
+	// Does this operation pertain to the given container id?
+	// Used for tidying up pending operations when containers die.
+	ForContainer(ident string) bool
 }
 
 // Allocator brings together Ring and space.Set, and does the
@@ -47,7 +51,7 @@ type Allocator struct {
 	prefixLen          int                        // network prefix length, e.g. 24 for a /24 network
 	ring               *ring.Ring                 // information on ranges owned by all peers
 	spaceSet           space.Set                  // more detail on ranges owned by us
-	owned              map[string][]net.IP        // who owns what address, indexed by container-ID
+	owned              map[string]net.IP          // who owns what address, indexed by container-ID
 	otherPeerNicknames map[router.PeerName]string // so we can map nicknames for tombstoning
 	pendingAllocates   []operation                // held until we get some free space
 	pendingClaims      []operation                // held until we know who owns the space
@@ -78,7 +82,7 @@ func NewAllocator(ourName router.PeerName, subnetCIDR string) (*Allocator, error
 		prefixLen:   ones,
 		// per RFC 1122, don't allocate the first and last address in the subnet
 		ring:               ring.New(utils.Add(subnet.IP, 1), utils.Add(subnet.IP, subnetSize-1), ourName),
-		owned:              make(map[string][]net.IP),
+		owned:              make(map[string]net.IP),
 		otherPeerNicknames: make(map[router.PeerName]string),
 	}
 	return alloc, nil
@@ -136,11 +140,26 @@ func (alloc *Allocator) cancelOp(op operation, ops *[]operation) {
 	}
 }
 
+// Cancel all operations in a queue
 func (alloc *Allocator) cancelOps(ops *[]operation) {
 	for _, op := range *ops {
 		op.Cancel()
 	}
 	*ops = []operation{}
+}
+
+// Cancel all operations for a given container id, returns true
+// if we found any.
+func (alloc *Allocator) cancelOpsFor(ops *[]operation, ident string) bool {
+	var found bool
+	for i, op := range *ops {
+		if op.ForContainer(ident) {
+			found = true
+			op.Cancel()
+			*ops = append((*ops)[:i], (*ops)[i+1:]...)
+		}
+	}
+	return found
 }
 
 // Try all pending operations
@@ -201,16 +220,36 @@ func (alloc *Allocator) Claim(ident string, addr net.IP, cancelChan <-chan bool)
 }
 
 // Free (Sync) - release IP address for container with given name
-func (alloc *Allocator) Free(ident string, addr net.IP) error {
-	resultChan := make(chan error)
+func (alloc *Allocator) Free(ident string) error {
+	return alloc.free(ident)
+}
+
+// ContainerDied is provided to satisfy the updater interface; does a free underneath.  Async.
+func (alloc *Allocator) ContainerDied(ident string) error {
+	alloc.debugln("Container", ident, "died; releasing addresses")
+	return alloc.free(ident)
+}
+
+func (alloc *Allocator) free(ident string) error {
+	errChan := make(chan error)
 	alloc.actionChan <- func() {
-		if alloc.removeOwned(ident, addr) {
-			resultChan <- alloc.spaceSet.Free(addr)
-		} else {
-			resultChan <- fmt.Errorf("free: %s not owned by %s", addr, ident)
+		addr, found := alloc.owned[ident]
+		if found {
+			alloc.spaceSet.Free(addr)
 		}
+		delete(alloc.owned, ident)
+
+		// Also remove any pending ops
+		found = alloc.cancelOpsFor(&alloc.pendingAllocates, ident) || found
+		found = alloc.cancelOpsFor(&alloc.pendingClaims, ident) || found
+
+		if !found {
+			errChan <- fmt.Errorf("No addresses for %s", ident)
+			return
+		}
+		errChan <- nil
 	}
-	return <-resultChan
+	return <-errChan
 }
 
 // Sync.
@@ -220,18 +259,6 @@ func (alloc *Allocator) String() string {
 		resultChan <- alloc.string()
 	}
 	return <-resultChan
-}
-
-// ContainerDied is provided to satisfy the updater interface; does a free underneath.  Async.
-func (alloc *Allocator) ContainerDied(ident string) error {
-	alloc.debugln("Container", ident, "died; releasing addresses")
-	alloc.actionChan <- func() {
-		for _, ip := range alloc.owned[ident] {
-			alloc.spaceSet.Free(ip)
-		}
-		delete(alloc.owned, ident)
-	}
-	return nil // this is to satisfy the ContainerObserver interface
 }
 
 // Shutdown (Sync)
@@ -389,6 +416,13 @@ func (alloc *Allocator) actorLoop(actionChan <-chan func()) {
 func (alloc *Allocator) string() string {
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "Allocator subnet %s+%d\n", alloc.subnetStart, alloc.subnetSize)
+
+	localFreeSpace := alloc.spaceSet.NumFreeAddresses()
+	remoteFreeSpace := alloc.ring.TotalRemoteFree()
+	percentFree := 100 * float64(localFreeSpace+remoteFreeSpace) / float64(alloc.subnetSize)
+	fmt.Fprintf(&buf, "  Free IPs: ~%.1f%%, %d local, ~%d remote\n",
+		percentFree, localFreeSpace, remoteFreeSpace)
+
 	alloc.ring.FprintWithNicknames(&buf, alloc.otherPeerNicknames)
 	fmt.Fprintf(&buf, alloc.spaceSet.String())
 	if len(alloc.pendingAllocates)+len(alloc.pendingClaims) > 0 {
@@ -506,30 +540,16 @@ func (alloc *Allocator) reportFreeSpace() {
 // Owned addresses
 
 func (alloc *Allocator) addOwned(ident string, addr net.IP) {
-	alloc.owned[ident] = append(alloc.owned[ident], addr)
+	alloc.owned[ident] = addr
 }
 
 func (alloc *Allocator) findOwner(addr net.IP) string {
-	for ident, addrs := range alloc.owned {
-		for _, ip := range addrs {
-			if ip.Equal(addr) {
-				return ident
-			}
+	for ident, candidate := range alloc.owned {
+		if candidate.Equal(addr) {
+			return ident
 		}
 	}
 	return ""
-}
-
-func (alloc *Allocator) removeOwned(ident string, addr net.IP) bool {
-	if addrs, found := alloc.owned[ident]; found {
-		for i, ip := range addrs {
-			if ip.Equal(addr) {
-				alloc.owned[ident] = append(addrs[:i], addrs[i+1:]...)
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // Logging
