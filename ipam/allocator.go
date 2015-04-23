@@ -99,7 +99,8 @@ func (alloc *Allocator) Start() {
 	go alloc.actorLoop(actionChan)
 }
 
-// Async.
+// Make the actor routine exit, for test purposes ONLY because any
+// calls after this is processed will hang. Async.
 func (alloc *Allocator) Stop() {
 	alloc.actionChan <- nil
 }
