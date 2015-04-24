@@ -74,6 +74,8 @@ func NewAllocator(ourName router.PeerName, subnetCIDR string) (*Allocator, error
 	var subnetSize uint32 = 1 << uint(bits-ones)
 	if subnetSize < 4 {
 		return nil, errors.New("Allocation subnet too small")
+	} else if subnetSize > space.MaxSize {
+		return nil, errors.New("Allocation subnet too large")
 	}
 	alloc := &Allocator{
 		ourName:     ourName,
