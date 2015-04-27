@@ -48,7 +48,7 @@ func (s *Set) assertInvariants() {
 }
 
 // AddSpace adds a new space to this set.
-func (s *Set) AddSpace(newspace Space) {
+func (s *Set) AddSpace(newspace *Space) {
 	s.assertInvariants()
 	defer s.assertInvariants()
 
@@ -57,7 +57,7 @@ func (s *Set) AddSpace(newspace Space) {
 
 	s.spaces = append(s.spaces, &Space{}) // make space
 	copy(s.spaces[i+1:], s.spaces[i:])    // move up
-	s.spaces[i] = &newspace               // put in new element
+	s.spaces[i] = newspace                // put in new element
 }
 
 // Clear removes all spaces from this space set.  Used during node shutdown.
@@ -165,10 +165,10 @@ func (s *Set) GiveUpSpace() (net.IP, uint32, bool) {
 	s.spaces = append(s.spaces[:spaceIndex], s.spaces[spaceIndex+1:]...)
 
 	if split1.Size > 0 {
-		s.AddSpace(*split1)
+		s.AddSpace(split1)
 	}
 	if split3 != nil {
-		s.AddSpace(*split3)
+		s.AddSpace(split3)
 	}
 
 	return bestStart, bestSize, true

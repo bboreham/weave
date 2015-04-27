@@ -27,7 +27,7 @@ func (ps1 *Set) Equal(ps2 *Set) bool {
 	return false
 }
 
-func spaceSetWith(spaces ...Space) *Set {
+func spaceSetWith(spaces ...*Space) *Set {
 	ps := Set{}
 	for _, space := range spaces {
 		ps.AddSpace(space)
@@ -45,7 +45,7 @@ func TestGiveUpSimple(t *testing.T) {
 		ipAddr1 = net.ParseIP(testAddr1)
 	)
 
-	ps1 := spaceSetWith(Space{Start: ipAddr1, Size: 48})
+	ps1 := spaceSetWith(&Space{Start: ipAddr1, Size: 48})
 
 	// Empty space set should split in two and give me the second half
 	start, numGivenUp, ok := ps1.GiveUpSpace()
@@ -75,11 +75,13 @@ func TestGiveUpHard(t *testing.T) {
 	)
 
 	// Fill a fresh space set
-	spaceset := spaceSetWith(Space{Start: start, Size: size})
+	spaceset := spaceSetWith(&Space{Start: start, Size: size})
 	for i := uint32(0); i < size; i++ {
 		ip := spaceset.Allocate()
 		wt.AssertTrue(t, ip != nil, "Failed to get IP!")
 	}
+
+	wt.AssertEqualUint32(t, spaceset.NumFreeAddresses(), 0, "num free addresses")
 
 	// Now free all but the last address
 	// this will force us to split the free list
@@ -95,7 +97,7 @@ func TestGiveUpHard(t *testing.T) {
 	wt.AssertEqualUint32(t, spaceset.NumFreeAddresses(), 23, "num free addresses")
 
 	//Space set should now have 2 spaces
-	expected := spaceSetWith(Space{Start: start, Size: 23},
-		Space{Start: net.ParseIP("10.0.1.47"), Size: 1})
+	expected := spaceSetWith(&Space{Start: start, Size: 23},
+		&Space{Start: net.ParseIP("10.0.1.47"), Size: 1})
 	wt.AssertTrue(t, spaceset.Equal(expected), "Wrong sets")
 }

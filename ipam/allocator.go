@@ -502,7 +502,7 @@ func (alloc *Allocator) considerNewSpaces() {
 		s, exists := alloc.spaceSet.Get(r.Start)
 		if !exists {
 			alloc.debugf("Found new space [%s, %s)", r.Start, r.End)
-			alloc.spaceSet.AddSpace(space.Space{Start: r.Start, Size: size})
+			alloc.spaceSet.AddSpace(&space.Space{Start: r.Start, Size: size})
 			continue
 		}
 
