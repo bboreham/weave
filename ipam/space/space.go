@@ -3,10 +3,10 @@ package space
 import (
 	"fmt"
 	"math"
-	"math/big"
 	"net"
 
 	"github.com/weaveworks/weave/ipam/utils"
+	"golang.org/x/tools/container/intsets"
 )
 
 // Space repsents a range of addresses owned by this peer,
@@ -14,13 +14,13 @@ import (
 type Space struct {
 	Start net.IP
 	Size  uint32
-	inuse big.Int // bit is 0 if free; 1 if in use
+	inuse intsets.Sparse
 }
 
 const MaxSize = math.MaxInt32 // big.Int uses 'int' for indexing, so assume it might be 32-bit
 
 func (space *Space) assertInvariants() {
-	utils.Assert(uint32(space.inuse.BitLen()) <= space.Size,
+	utils.Assert(space.inuse.Max() < int(space.Size),
 		"In-use list must not be bigger than size")
 }
 
@@ -35,7 +35,7 @@ func (space *Space) Claim(addr net.IP) (bool, error) {
 	if !(offset >= 0 && offset < int64(space.Size)) {
 		return false, nil
 	}
-	space.inuse.SetBit(&space.inuse, int(offset), 1)
+	space.inuse.Insert(int(offset))
 	return true, nil
 }
 
@@ -44,19 +44,19 @@ func (space *Space) Allocate() net.IP {
 	space.assertInvariants()
 	defer space.assertInvariants()
 
-	// Find the lowest available address on the free list
-	offset := 0
-	for ; offset < space.inuse.BitLen(); offset++ {
-		if space.inuse.Bit(offset) == 0 {
+	// Find the lowest available address - would be better if intsets.Sparse did this internally
+	var offset uint32 = 0
+	for ; offset < space.Size; offset++ {
+		if !space.inuse.Has(int(offset)) {
 			break
 		}
 	}
-	if uint32(offset) >= space.Size { // out of space
+	if offset >= space.Size { // out of space
 		return nil
 	}
 
-	space.inuse.SetBit(&space.inuse, offset, 1)
-	return utils.Add(space.Start, uint32(offset))
+	space.inuse.Insert(int(offset))
+	return utils.Add(space.Start, offset)
 }
 
 func (space *Space) addrInRange(addr net.IP) bool {
@@ -74,10 +74,10 @@ func (space *Space) Free(addr net.IP) error {
 	}
 
 	offset := utils.Subtract(addr, space.Start)
-	if space.inuse.Bit(int(offset)) == 0 {
-		return fmt.Errorf("Duplicate free: %s", addr)
+	if !space.inuse.Has(int(offset)) {
+		return fmt.Errorf("Freeing address that is not in use: %s", addr)
 	}
-	space.inuse.SetBit(&space.inuse, int(offset), 0)
+	space.inuse.Remove(int(offset))
 
 	return nil
 }
@@ -88,14 +88,13 @@ func (space *Space) assertFree(start net.IP, size uint32) {
 	utils.Assert(space.contains(start), "Range outside my care")
 	utils.Assert(space.contains(utils.Add(start, size-1)), "Range outside my care")
 
-	startOffset := uint32(utils.Subtract(space.Start, start))
-	endOffset := startOffset + size
-	if endOffset > uint32(space.inuse.BitLen()) { // Anything beyond this is free
-		endOffset = uint32(space.inuse.BitLen())
+	startOffset := int(utils.Subtract(start, space.Start))
+	if startOffset > space.inuse.Max() { // Anything beyond this is free
+		return
 	}
 
-	for i := startOffset; i < endOffset; i++ {
-		utils.Assert(space.inuse.Bit(int(i)) == 0, "Address in use!")
+	for i := startOffset; i < startOffset+int(size); i++ {
+		utils.Assert(!space.inuse.Has(i), "Address in use!")
 	}
 }
 
@@ -106,16 +105,21 @@ func (space *Space) BiggestFreeChunk() (net.IP, uint32) {
 	space.assertInvariants()
 	defer space.assertInvariants()
 
+	if space.inuse.IsEmpty() { // Check to avoid Max() returning MinInt below
+		return space.Start, space.Size
+	}
+
 	// Keep a track of the current chunk start and size
 	// First chunk we've found is the one of unallocated space at the end
-	chunkStart := uint32(space.inuse.BitLen())
+	max := space.inuse.Max()
+	chunkStart := uint32(max) + 1
 	chunkSize := space.Size - chunkStart
 
-	// Now scan the free list of other chunks
-	for i := 0; i < space.inuse.BitLen(); i++ {
+	// Now scan the free list to find other chunks
+	for i := 0; i < max; i++ {
 		potentialStart := uint32(i)
 		// Run forward past all the free ones
-		for i < space.inuse.BitLen() && space.inuse.Bit(i) == 0 {
+		for i < max && !space.inuse.Has(i) {
 			i++
 		}
 		// Is the chunk we found bigger than the
@@ -146,15 +150,11 @@ func (space *Space) Grow(size uint32) {
 // NumFreeAddresses returns the total number of free addresses in
 // this space.
 func (space *Space) NumFreeAddresses() uint32 {
-	var numInUse uint = 0
-	for i := 0; i < space.inuse.BitLen(); i++ {
-		numInUse += space.inuse.Bit(i)
-	}
-	return space.Size - uint32(numInUse)
+	return space.Size - uint32(space.inuse.Len())
 }
 
 func (space *Space) String() string {
-	return fmt.Sprintf("%s+%d (%d)", space.Start, space.Size, space.inuse.BitLen())
+	return fmt.Sprintf("%s+%d (%d)", space.Start, space.Size, space.inuse.Len())
 }
 
 // Split divide this space into two new spaces at a given address, copying allocations and frees.
@@ -164,13 +164,17 @@ func (space *Space) Split(addr net.IP) (*Space, *Space) {
 	ret1 := &Space{Start: space.Start, Size: uint32(breakpoint)}
 	ret2 := &Space{Start: addr, Size: space.Size - uint32(breakpoint)}
 
-	// Copy the inuse using mask and shift
-	var mask, one big.Int
-	mask.SetBit(&mask, int(breakpoint), 1)
-	one.SetInt64(1)
-	mask.Sub(&mask, &one)
-	ret1.inuse.And(&space.inuse, &mask)
-	ret2.inuse.Rsh(&space.inuse, uint(breakpoint))
+	// Now copy the in-use list - this implementation is slow but simple
+	max := space.inuse.Max()
+	for i := 0; i <= max; i++ {
+		if space.inuse.Has(i) {
+			if i < int(breakpoint) {
+				ret1.inuse.Insert(i)
+			} else {
+				ret2.inuse.Insert(i - int(breakpoint))
+			}
+		}
+	}
 
 	return ret1, ret2
 }

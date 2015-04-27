@@ -78,8 +78,7 @@ func TestSpaceFree(t *testing.T) {
 	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.22")))
 	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.21")))
 
-	// These free should have shrunk the free list
-	wt.AssertTrue(t, space.inuse.BitLen() == 17, "Free list didn't shrink!")
+	wt.AssertEqualUint32(t, space.NumFreeAddresses(), 4, "Free list didn't shrink!")
 
 	// Now get the biggest free space; should be 3.21
 	start, size = space.BiggestFreeChunk()
@@ -90,8 +89,7 @@ func TestSpaceFree(t *testing.T) {
 	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.11")))
 	wt.AssertSuccess(t, space.Free(net.ParseIP("10.0.3.10")))
 
-	// These free should not have shrunk the free list
-	wt.AssertTrue(t, space.inuse.BitLen() == 17, "Free list didn't shrink!")
+	wt.AssertEqualUint32(t, space.NumFreeAddresses(), 7, "Free list didn't shrink!")
 
 	// Now get the biggest free space; should be 3.21
 	start, size = space.BiggestFreeChunk()
