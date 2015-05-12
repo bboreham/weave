@@ -3,7 +3,7 @@ package weaveapi
 import (
 	"errors"
 	"fmt"
-	"github.com/zettio/weave/router"
+	"github.com/weaveworks/weave/router"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -67,11 +67,11 @@ func (client *Client) Connect(remote string) error {
 }
 
 func (client *Client) AllocateIPFor(id string) (string, error) {
-	ret, err := httpGet(client.baseUrl + "/ip/" + id)
+	ret, err := httpPost(client.baseUrl+"/ip/"+id, url.Values{})
 	return ret, err
 }
 
-func (client *Client) FreeIPFor(ip string, id string) (string, error) {
-	ret, err := httpVerb("DELETE", client.baseUrl+"/ip/"+id+"/"+ip)
+func (client *Client) FreeIPsFor(id string) (string, error) {
+	ret, err := httpVerb("DELETE", client.baseUrl+"/ip/"+id)
 	return ret, err
 }

@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 	"github.com/fsouza/go-dockerclient"
-	lg "github.com/zettio/weave/common"
-	wt "github.com/zettio/weave/testing"
-	"github.com/zettio/weave/weaveapi"
+	lg "github.com/weaveworks/weave/common"
+	wt "github.com/weaveworks/weave/testing"
+	"github.com/weaveworks/weave/weaveapi"
 	"math/rand"
 	"net"
 	"os"
@@ -75,7 +75,7 @@ func TestAllocFromOne() {
 	N := 3
 	context := &testContext{apiPath: "unix:/var/run/docker.sock"}
 	context.init(N)
-	context.makeWeaves(N, "-alloc", "10.0.0.0/22")
+	context.makeWeaves(N, "-iprange", "10.0.0.0/22")
 	for i := 0; ; i++ {
 		_, err := context.weaves[0].AllocateIPFor("foobar")
 		if err != nil {
@@ -90,7 +90,7 @@ func TestAllocFromRand() {
 	ips := make(map[string]int)
 	context := &testContext{apiPath: "unix:/var/run/docker.sock"}
 	context.init(N)
-	context.makeWeaves(N, "-alloc", "10.0.0.0/22")
+	context.makeWeaves(N, "-iprange", "10.0.0.0/22", "-quorum", fmt.Sprintf("%d", N/2+1))
 	for i := 0; ; i++ {
 		client := rand.Intn(N)
 		lg.Info.Printf("%d: Calling %d\n", i, client)
@@ -114,7 +114,6 @@ type allocOper struct {
 
 type freeOper struct {
 	weaveNum     int
-	ip           string
 	containerNum int
 }
 
@@ -124,7 +123,7 @@ func TestAllocAndDelete(numWeaves, numGoroutines int) {
 
 	context := &testContext{apiPath: "unix:/var/run/docker.sock"}
 	context.init(numWeaves)
-	context.makeWeaves(numWeaves, "-alloc", "10.0.0.0/22")
+	context.makeWeaves(numWeaves, "-iprange", "10.0.0.0/22", "-quorum", fmt.Sprintf("%d", numWeaves/2+1))
 	context.ips = make([]string, MaxContainers)
 	context.ipmap = make(map[string]int)
 
@@ -153,7 +152,7 @@ func TestAllocAndDelete(numWeaves, numGoroutines int) {
 				context.ips[n] = "pending"
 				numAllocated--
 				context.Unlock()
-				channel <- freeOper{weaveNum: weaveNum, ip: ip, containerNum: n}
+				channel <- freeOper{weaveNum: weaveNum, containerNum: n}
 			} else {
 				context.Unlock()
 			}
@@ -227,10 +226,10 @@ func (context *testContext) actionLoop(input <-chan interface{}) {
 			switch op := in.(type) {
 			case freeOper:
 				ident := fmt.Sprintf("container%d", op.containerNum)
-				lg.Info.Printf("Freeing %s/%s from %d", ident, op.ip, op.weaveNum)
-				_, err := context.weaves[op.weaveNum].FreeIPFor(op.ip, ident)
+				lg.Info.Printf("Freeing %s from %d", ident, op.weaveNum)
+				_, err := context.weaves[op.weaveNum].FreeIPsFor(ident)
 				if err != nil {
-					lg.Error.Fatalf("Error on freeing %s: %s", op.ip, err)
+					lg.Error.Fatalf("Error on freeing %s from %d: %s", ident, op.weaveNum, err)
 				}
 				context.Lock()
 				context.ips[op.containerNum] = ""
@@ -366,10 +365,10 @@ func (context *testContext) deleteOldContainers() {
 
 func (context *testContext) startOneWeave(name string, args ...string) *docker.Container {
 	config := &docker.Config{
-		Image: "zettio/weave",
+		Image: "weaveworks/weave",
 		Cmd:   []string{"-iface", "ethwe", "--nickname", name}, //, "-api", "none",
 		//"-autoAddConnections=false",
-		//"-alloc", "10.0.0.0/22", "-debug"},
+		//"-iprange", "10.0.0.0/22", "-debug"},
 	}
 	config.Cmd = append(config.Cmd, os.Args[1:]...)
 	config.Cmd = append(config.Cmd, args...)
