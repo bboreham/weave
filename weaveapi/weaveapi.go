@@ -37,10 +37,10 @@ func httpVerb(verb string, url string) (string, error) {
 	} else {
 		defer resp.Body.Close()
 		body, _ := ioutil.ReadAll(resp.Body)
-		if resp.StatusCode != http.StatusOK {
-			return "", errors.New(resp.Status + ": " + string(body))
-		} else {
+		if resp.StatusCode == http.StatusOK || verb == "DELETE" && resp.StatusCode == http.StatusNoContent {
 			return string(body), nil
+		} else {
+			return "", errors.New(resp.Status + ": " + string(body))
 		}
 	}
 }

@@ -90,7 +90,7 @@ func TestAllocFromRand() {
 	ips := make(map[string]int)
 	context := &testContext{apiPath: "unix:/var/run/docker.sock"}
 	context.init(N)
-	context.makeWeaves(N, "-iprange", "10.0.0.0/22", "-quorum", fmt.Sprintf("%d", N/2+1))
+	context.makeWeaves(N, "-iprange", "10.0.0.0/22", "-initpeercount", fmt.Sprintf("%d", N))
 	for i := 0; ; i++ {
 		client := rand.Intn(N)
 		lg.Info.Printf("%d: Calling %d\n", i, client)
@@ -123,7 +123,7 @@ func TestAllocAndDelete(numWeaves, numGoroutines int) {
 
 	context := &testContext{apiPath: "unix:/var/run/docker.sock"}
 	context.init(numWeaves)
-	context.makeWeaves(numWeaves, "-iprange", "10.0.0.0/22", "-quorum", fmt.Sprintf("%d", numWeaves/2+1))
+	context.makeWeaves(numWeaves, "-iprange", "10.0.0.0/22", "-initpeercount", fmt.Sprintf("%d", numWeaves))
 	context.ips = make([]string, MaxContainers)
 	context.ipmap = make(map[string]int)
 
