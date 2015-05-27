@@ -29,17 +29,17 @@ all: $(WEAVER_EXPORT) $(WEAVEDNS_EXPORT) $(WEAVEEXEC_EXPORT)
 travis: $(WEAVER_EXE) $(WEAVEDNS_EXE)
 
 update:
-	go get -u -f -v -tags -netgo ./$(dir $(WEAVER_EXE)) ./$(dir $(WEAVEDNS_EXE)) ./$(dir $(SIGPROXY_EXE)) ./$(dir $(WEAVEPROXY_EXE))
+	go get -u -f -v -tags -netgo -installsuffix netgo ./$(dir $(WEAVER_EXE)) ./$(dir $(WEAVEDNS_EXE)) ./$(dir $(SIGPROXY_EXE)) ./$(dir $(WEAVEPROXY_EXE))
 
 $(WEAVER_EXE) $(WEAVEDNS_EXE) $(WEAVEPROXY_EXE) $(WEAVEWAIT_EXE): common/*.go
-	go get -tags netgo ./$(@D)
-	go build -ldflags "-extldflags \"-static\" -X main.version $(WEAVE_VERSION)" -tags netgo -o $@ ./$(@D)
+	go get -tags netgo -installsuffix netgo ./$(@D)
+	go build -ldflags "-extldflags \"-static\" -X main.version $(WEAVE_VERSION)" -tags netgo -installsuffix netgo -o $@ ./$(@D)
 	@strings $@ | grep cgo_stub\\\.go >/dev/null || { \
 		rm $@; \
 		echo "\nYour go standard library was built without the 'netgo' build tag."; \
 		echo "To fix that, run"; \
 		echo "    sudo go clean -i net"; \
-		echo "    sudo go install -tags netgo std"; \
+		echo "    sudo go install -tags netgo -installsuffix netgo std"; \
 		false; \
 	}
 
@@ -78,7 +78,7 @@ tests:
 	fail=0 ;                                                                              \
 	for dir in $$(find . -type f -name '*_test.go' | xargs -n1 dirname | sort -u); do     \
 	    output=$$(mktemp cover.XXXXXXXXXX) ;                                              \
-	    if ! go test -tags netgo -covermode=count -coverprofile=$$output $$dir ; then     \
+	    if ! go test -tags netgo -installsuffix netgo -covermode=count -coverprofile=$$output $$dir ; then     \
             fail=1 ;                                                                          \
         fi ;                                                                                  \
 	    if [ -f $$output ]; then                                                          \
@@ -102,7 +102,7 @@ clean:
 
 build:
 	$(SUDO) go clean -i net
-	$(SUDO) go install -tags netgo std
+	$(SUDO) go install -tags netgo -installsuffix netgo std
 	$(MAKE)
 
 run-smoketests: all
