@@ -11,6 +11,7 @@ type allocateResult struct {
 }
 
 type allocate struct {
+	*subnet
 	resultChan       chan<- allocateResult
 	hasBeenCancelled func() bool
 	ident            string
@@ -29,7 +30,9 @@ func (g *allocate) Try(alloc *Allocator) bool {
 		return true
 	}
 
-	if ok, addr := alloc.space.Allocate(); ok {
+	alloc.establishRing(g.subnet)
+
+	if ok, addr := g.subnet.space.Allocate(); ok {
 		alloc.debugln("Allocated", addr, "for", g.ident)
 		alloc.addOwned(g.ident, addr)
 		g.resultChan <- allocateResult{addr, nil}
@@ -37,9 +40,9 @@ func (g *allocate) Try(alloc *Allocator) bool {
 	}
 
 	// out of space
-	if donor, err := alloc.ring.ChoosePeerToAskForSpace(); err == nil {
-		alloc.debugln("Decided to ask peer", donor, "for space")
-		alloc.sendRequest(donor, msgSpaceRequest)
+	if donor, err := g.subnet.ring.ChoosePeerToAskForSpace(); err == nil {
+		alloc.debugln("Decided to ask peer", donor, "for space in subnet", g.subnet)
+		alloc.sendRequest(donor, msgSpaceRequest) // fixme: needs to send subnet
 	}
 
 	return false

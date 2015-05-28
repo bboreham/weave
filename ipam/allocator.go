@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sort"
 	"time"
@@ -40,57 +41,73 @@ type operation interface {
 	ForContainer(ident string) bool
 }
 
+type subnet struct {
+	// fixme: change 'subnetStart' to 'start' etc
+	subnetStart address.Address // start address of space all peers are allocating from
+	subnetSize  address.Offset  // length of space all peers are allocating from
+	prefixLen   int             // network prefix length, e.g. 24 for a /24 network
+	ring        *ring.Ring      // information on ranges owned by all peers
+	space       *space.Space    // more detail on ranges owned by us
+	paxos       *paxos.Node
+}
+
 // Allocator brings together Ring and space.Set, and does the
 // necessary plumbing.  Runs as a single-threaded Actor, so no locks
 // are used around data structures.
 type Allocator struct {
 	actionChan       chan<- func()
 	ourName          router.PeerName
-	subnetStart      address.Address            // start address of space all peers are allocating from
-	subnetSize       address.Offset             // length of space all peers are allocating from
-	prefixLen        int                        // network prefix length, e.g. 24 for a /24 network
-	ring             *ring.Ring                 // information on ranges owned by all peers
-	space            space.Space                // more detail on ranges owned by us
+	ourUID           router.PeerUID
+	quorum           uint
+	subnets          map[address.Address]*subnet // mapped by start address
+	defaultSubnet    *subnet
 	owned            map[string]address.Address // who owns what address, indexed by container-ID
 	nicknames        map[router.PeerName]string // so we can map nicknames for rmpeer
 	pendingAllocates []operation                // held until we get some free space
 	pendingClaims    []operation                // held until we know who owns the space
 	gossip           router.Gossip              // our link to the outside world for sending messages
-	paxos            *paxos.Node
 	paxosTicker      *time.Ticker
 	shuttingDown     bool // to avoid doing any requests while trying to shut down
 	now              func() time.Time
 }
 
-// NewAllocator creates and initialises a new Allocator
-func NewAllocator(ourName router.PeerName, ourUID router.PeerUID, ourNickname string, subnetCIDR string, quorum uint) (*Allocator, error) {
-	_, subnet, err := net.ParseCIDR(subnetCIDR)
+func (alloc *Allocator) AddSubnet(subnetStr string) error {
+	_, subnetCIDR, err := net.ParseCIDR(subnetStr)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if subnet.IP.To4() == nil {
-		return nil, errors.New("Non-IPv4 address not supported")
+	if subnetCIDR.IP.To4() == nil {
+		return errors.New("Non-IPv4 address not supported")
 	}
 	// Get the size of the network from the mask
-	ones, bits := subnet.Mask.Size()
+	ones, bits := subnetCIDR.Mask.Size()
 	var subnetSize address.Offset = 1 << uint(bits-ones)
 	if subnetSize < 4 {
-		return nil, errors.New("Allocation subnet too small")
+		return errors.New("Allocation subnet too small")
 	}
-	subnetStart := address.FromIP4(subnet.IP)
-	alloc := &Allocator{
-		ourName:     ourName,
+	subnetStart := address.FromIP4(subnetCIDR.IP)
+	subnetData := &subnet{
 		subnetStart: subnetStart,
 		subnetSize:  subnetSize,
 		prefixLen:   ones,
 		// per RFC 1122, don't allocate the first and last address in the subnet
-		ring:      ring.New(address.Add(subnetStart, 1), address.Add(subnetStart, subnetSize-1), ourName),
+		ring:  ring.New(address.Add(subnetStart, 1), address.Add(subnetStart, subnetSize-1), alloc.ourName),
+		paxos: paxos.NewNode(alloc.ourName, alloc.ourUID, alloc.quorum),
+	}
+	return alloc.AddSubnetData(subnetData)
+}
+
+// NewAllocator creates and initialises a new Allocator
+func NewAllocator(ourName router.PeerName, ourUID router.PeerUID, ourNickname string, quorum uint) *Allocator {
+	return &Allocator{
+		ourName:   ourName,
+		ourUID:    ourUID,
+		quorum:    quorum,
+		subnets:   make(map[address.Address]*subnet),
 		owned:     make(map[string]address.Address),
-		paxos:     paxos.NewNode(ourName, ourUID, quorum),
 		nicknames: map[router.PeerName]string{ourName: ourNickname},
 		now:       time.Now,
 	}
-	return alloc, nil
 }
 
 // Start runs the allocator goroutine
@@ -115,7 +132,6 @@ func (alloc *Allocator) doOperation(op operation, ops *[]operation) {
 			op.Cancel()
 			return
 		}
-		alloc.establishRing()
 		if !op.Try(alloc) {
 			*ops = append(*ops, op)
 		}
@@ -197,11 +213,24 @@ func hasBeenCancelled(cancelChan <-chan bool) func() bool {
 
 // Actor client API
 
+func (alloc *Allocator) AddSubnetData(subnetData *subnet) error {
+	resultChan := make(chan error)
+	alloc.actionChan <- func() {
+		// fixme: check if we already have an overlapping subnet
+		alloc.subnets[subnetData.subnetStart] = subnetData
+		// First one added is the default subnet for allocations where user doesn't specify
+		if alloc.defaultSubnet == nil {
+			alloc.defaultSubnet = subnetData
+		}
+	}
+	return <-resultChan
+}
+
 // Allocate (Sync) - get IP address for container with given name
 // if there isn't any space we block indefinitely
-func (alloc *Allocator) Allocate(ident string, cancelChan <-chan bool) (address.Address, error) {
+func (alloc *Allocator) Allocate(ident string, subnet address.Address, cancelChan <-chan bool) (address.Address, error) {
 	resultChan := make(chan allocateResult)
-	op := &allocate{resultChan: resultChan, ident: ident,
+	op := &allocate{subnet: subnet, resultChan: resultChan, ident: ident,
 		hasBeenCancelled: hasBeenCancelled(cancelChan)}
 	alloc.doOperation(op, &alloc.pendingAllocates)
 	result := <-resultChan
@@ -233,7 +262,13 @@ func (alloc *Allocator) free(ident string) error {
 	alloc.actionChan <- func() {
 		addr, found := alloc.owned[ident]
 		if found {
-			alloc.space.Free(addr)
+			// note if we stored the prefixlen / mask we wouldn't have to iterate
+			for _, subnet := range alloc.subnets {
+				if subnet.ring.Contains(addr) {
+					subnet.space.Free(addr)
+				}
+			}
+			// fixme: error if not found?
 		}
 		delete(alloc.owned, ident)
 
@@ -267,9 +302,15 @@ func (alloc *Allocator) Shutdown() {
 		alloc.shuttingDown = true
 		alloc.cancelOps(&alloc.pendingClaims)
 		alloc.cancelOps(&alloc.pendingAllocates)
-		if heir := alloc.ring.PickPeerForTransfer(); heir != router.UnknownPeerName {
-			alloc.ring.Transfer(alloc.ourName, heir)
-			alloc.space.Clear()
+		needToBroadcast := false
+		for _, subnet := range alloc.subnets {
+			if heir := subnet.ring.PickPeerForTransfer(); heir != router.UnknownPeerName {
+				subnet.ring.Transfer(alloc.ourName, heir)
+				subnet.space.Clear()
+				needToBroadcast = true
+			}
+		}
+		if needToBroadcast {
 			alloc.gossip.GossipBroadcast(alloc.Gossip())
 			time.Sleep(100 * time.Millisecond)
 		}
@@ -296,8 +337,10 @@ func (alloc *Allocator) AdminTakeoverRanges(peerNameOrNickname string) error {
 		}
 
 		delete(alloc.nicknames, peername)
-		newRanges, err := alloc.ring.Transfer(peername, alloc.ourName)
-		alloc.space.AddRanges(newRanges)
+		for _, subnet := range alloc.subnets {
+			newRanges, err := subnet.ring.Transfer(peername, alloc.ourName)
+			subnet.space.AddRanges(newRanges)
+		}
 		resultChan <- err
 	}
 	return <-resultChan
@@ -317,9 +360,13 @@ func (alloc *Allocator) lookupPeername(name string) (router.PeerName, error) {
 	return router.PeerNameFromString(name)
 }
 
-// Restrict the peers in "nicknames" to those in the ring and our own
+// Restrict the peers in "nicknames" to those in all rings and our own
 func (alloc *Allocator) pruneNicknames() {
-	ringPeers := alloc.ring.PeerNames()
+	ringPeers := make(map[router.PeerName]struct{})
+	for _, subnet := range alloc.subnets {
+		ringPeers = subnet.ring.PeerNames()
+		//fixme!
+	}
 	for name := range alloc.nicknames {
 		if _, ok := ringPeers[name]; !ok && name != alloc.ourName {
 			delete(alloc.nicknames, name)
@@ -359,22 +406,31 @@ type gossipState struct {
 	// gossipped in order to do detect skewed clocks
 	Now       int64
 	Nicknames map[router.PeerName]string
+	Subnets   []gossipStateSubnet
+}
 
-	Paxos paxos.GossipState
-	Ring  *ring.Ring
+type gossipStateSubnet struct {
+	Subnet address.Address
+	Paxos  paxos.GossipState
+	Ring   *ring.Ring
 }
 
 func (alloc *Allocator) encode() []byte {
+	gss := make([]gossipStateSubnet, 0, len(alloc.subnets))
+	for subnetStart, subnet := range alloc.subnets {
+		gs := gossipStateSubnet{Subnet: subnetStart}
+		// We're only interested in Paxos until we have a Ring.
+		if subnet.ring.Empty() {
+			gs.Paxos = subnet.paxos.GossipState()
+		} else {
+			gs.Ring = subnet.ring
+		}
+		gss = append(gss, gs)
+	}
 	data := gossipState{
 		Now:       alloc.now().Unix(),
 		Nicknames: alloc.nicknames,
-	}
-
-	// We're only interested in Paxos until we have a Ring.
-	if alloc.ring.Empty() {
-		data.Paxos = alloc.paxos.GossipState()
-	} else {
-		data.Ring = alloc.ring
+		Subnets:   gss,
 	}
 	buf := new(bytes.Buffer)
 	enc := gob.NewEncoder(buf)
@@ -444,7 +500,11 @@ func (alloc *Allocator) actorLoop(actionChan <-chan func()) {
 			}
 			action()
 		case <-tickChan:
-			alloc.propose()
+			for _, subnet := range alloc.subnets {
+				if subnet.ring.Empty() {
+					alloc.propose(subnet)
+				}
+			}
 		}
 
 		alloc.assertInvariants()
@@ -454,70 +514,77 @@ func (alloc *Allocator) actorLoop(actionChan <-chan func()) {
 
 // Helper functions
 
-func (alloc *Allocator) string() string {
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "Allocator subnet %s/%d\n", alloc.subnetStart.String(), alloc.prefixLen)
+func (subnet *subnet) FprintWithNicknames(w io.Writer, nicknames map[router.PeerName]string) {
+	fmt.Fprintf(w, "Subnet %s/%d\n", subnet.subnetStart.String(), subnet.prefixLen)
 
-	if alloc.ring.Empty() {
-		fmt.Fprintf(&buf, "Awaiting consensus: %s", alloc.paxos.String())
+	if subnet.ring.Empty() {
+		fmt.Fprintf(w, "Awaiting consensus: %s", subnet.paxos.String())
 	} else {
-		localFreeSpace := alloc.space.NumFreeAddresses()
-		remoteFreeSpace := alloc.ring.TotalRemoteFree()
-		percentFree := 100 * float64(localFreeSpace+remoteFreeSpace) / float64(alloc.subnetSize)
-		fmt.Fprintf(&buf, "  Free IPs: ~%.1f%%, %d local, ~%d remote\n",
+		localFreeSpace := subnet.space.NumFreeAddresses()
+		remoteFreeSpace := subnet.ring.TotalRemoteFree()
+		percentFree := 100 * float64(localFreeSpace+remoteFreeSpace) / float64(subnet.subnetSize)
+		fmt.Fprintf(w, "  Free IPs: ~%.1f%%, %d local, ~%d remote\n",
 			percentFree, localFreeSpace, remoteFreeSpace)
 
-		fmt.Fprint(&buf, "Owned Ranges:")
-		alloc.ring.FprintWithNicknames(&buf, alloc.nicknames)
-		if len(alloc.pendingAllocates)+len(alloc.pendingClaims) > 0 {
-			fmt.Fprintf(&buf, "\nPending requests for ")
-			for _, op := range alloc.pendingAllocates {
-				fmt.Fprintf(&buf, "%s, ", op.String())
-			}
-			for _, op := range alloc.pendingClaims {
-				fmt.Fprintf(&buf, "%s, ", op.String())
-			}
+		fmt.Fprint(w, "Owned Ranges:")
+		subnet.ring.FprintWithNicknames(w, nicknames)
+	}
+}
+
+func (alloc *Allocator) string() string {
+	var buf bytes.Buffer
+
+	for _, subnet := range alloc.subnets {
+		subnet.FprintWithNicknames(&buf, alloc.nicknames)
+	}
+	if len(alloc.pendingAllocates)+len(alloc.pendingClaims) > 0 {
+		fmt.Fprintf(&buf, "\nPending requests for ")
+		for _, op := range alloc.pendingAllocates {
+			fmt.Fprintf(&buf, "%s, ", op.String())
+		}
+		for _, op := range alloc.pendingClaims {
+			fmt.Fprintf(&buf, "%s, ", op.String())
 		}
 	}
 	return buf.String()
 }
 
 // Ensure we are making progress towards an established ring
-func (alloc *Allocator) establishRing() {
-	if !alloc.ring.Empty() || alloc.paxosTicker != nil {
+func (alloc *Allocator) establishRing(subnet *subnet) {
+	if !subnet.ring.Empty() || alloc.paxosTicker != nil {
 		return
 	}
 
-	alloc.propose()
-	if ok, cons := alloc.paxos.Consensus(); ok {
+	alloc.propose(subnet)
+	if ok, cons := subnet.paxos.Consensus(); ok {
 		// If the quorum was 1, then proposing immediately
 		// leads to consensus
-		alloc.createRing(cons.Value)
+		alloc.createRing(subnet, cons.Value)
 	} else {
 		// re-try until we get consensus
 		alloc.paxosTicker = time.NewTicker(paxosInterval)
 	}
 }
 
-func (alloc *Allocator) createRing(peers []router.PeerName) {
+func (alloc *Allocator) createRing(subnet *subnet, peers []router.PeerName) {
 	alloc.debugln("Paxos consensus:", peers)
-	alloc.ring.ClaimForPeers(normalizeConsensus(peers))
+	subnet.ring.ClaimForPeers(normalizeConsensus(peers))
 	alloc.gossip.GossipBroadcast(alloc.Gossip())
-	alloc.ringUpdated()
+	alloc.ringUpdated(subnet)
 }
 
-func (alloc *Allocator) ringUpdated() {
+func (alloc *Allocator) ringUpdated(subnet *subnet) {
 	// When we have a ring, we don't need paxos any more
-	if alloc.paxos != nil {
-		alloc.paxos = nil
+	if subnet.paxos != nil {
+		subnet.paxos = nil
 
-		if alloc.paxosTicker != nil {
+		if alloc.paxosTicker != nil { // fixme
 			alloc.paxosTicker.Stop()
 			alloc.paxosTicker = nil
 		}
 	}
 
-	alloc.space.UpdateRanges(alloc.ring.OwnedRanges())
+	subnet.space.UpdateRanges(subnet.ring.OwnedRanges())
 	alloc.tryPendingOps()
 }
 
@@ -551,9 +618,9 @@ func normalizeConsensus(consensus []router.PeerName) []router.PeerName {
 	return peers[:dst+1]
 }
 
-func (alloc *Allocator) propose() {
-	alloc.debugf("Paxos proposing")
-	alloc.paxos.Propose()
+func (alloc *Allocator) propose(subnet *subnet) {
+	alloc.debugf("Paxos proposing for subnet %s", subnet)
+	subnet.paxos.Propose()
 	alloc.gossip.GossipBroadcast(alloc.Gossip())
 }
 
@@ -568,10 +635,7 @@ func (alloc *Allocator) update(msg []byte) error {
 	var data gossipState
 	var err error
 
-	if err := decoder.Decode(&data); err != nil {
-		return err
-	}
-
+	// fixme: move this up to higher level
 	deltat := time.Unix(data.Now, 0).Sub(alloc.now())
 	if deltat > time.Hour || -deltat > time.Hour {
 		return fmt.Errorf("clock skew of %v detected, ignoring update", deltat)
@@ -582,83 +646,97 @@ func (alloc *Allocator) update(msg []byte) error {
 		alloc.nicknames[peer] = nickname
 	}
 
-	// only one of Ring and Paxos should be present.  And we
-	// shouldn't get updates for a empty Ring. But tolerate
-	// them just in case.
-	if data.Ring != nil {
-		err = alloc.ring.Merge(*data.Ring)
-		if !alloc.ring.Empty() {
-			alloc.pruneNicknames()
-			alloc.ringUpdated()
+	shouldBroadcast := false
+
+	for _, s := range data.Subnets {
+		if subnet, found := alloc.subnets[s.Subnet]; found {
+			// only one of Ring and Paxos should be present.  And we
+			// shouldn't get updates for a empty Ring. But tolerate
+			// them just in case.
+			if s.Ring != nil {
+				if err = subnet.ring.Merge(*s.Ring); err != nil {
+					return err
+				}
+				if !subnet.ring.Empty() {
+					alloc.pruneNicknames() // fixme?
+					alloc.ringUpdated(subnet)
+				}
+			}
+
+			if s.Paxos != nil && subnet.ring.Empty() {
+				if subnet.paxos.Update(s.Paxos) {
+					if subnet.paxos.Think() {
+						shouldBroadcast = true
+					}
+
+					if ok, cons := subnet.paxos.Consensus(); ok {
+						alloc.createRing(subnet, cons.Value)
+					}
+				}
+			}
 		}
-		return err
 	}
-
-	if data.Paxos != nil && alloc.ring.Empty() {
-		if alloc.paxos.Update(data.Paxos) {
-			if alloc.paxos.Think() {
-				// If something important changed, broadcast
-				alloc.gossip.GossipBroadcast(alloc.Gossip())
-			}
-
-			if ok, cons := alloc.paxos.Consensus(); ok {
-				alloc.createRing(cons.Value)
-			}
-		}
+	if shouldBroadcast {
+		// If something important changed, broadcast
+		alloc.gossip.GossipBroadcast(alloc.Gossip())
 	}
 
 	return nil
 }
 
-func (alloc *Allocator) donateSpace(to router.PeerName) {
+func (alloc *Allocator) donateSpace(subnet *subnet, to router.PeerName) {
 	// No matter what we do, we'll send a unicast gossip
 	// of our ring back to tha chap who asked for space.
 	// This serves to both tell him of any space we might
 	// have given him, or tell him where he might find some
 	// more.
-	defer alloc.sendRequest(to, msgRingUpdate)
+	defer alloc.sendRequest(to, msgRingUpdate) // fixme: specific subnet?
 
 	alloc.debugln("Peer", to, "asked me for space")
-	start, size, ok := alloc.space.Donate()
+	start, size, ok := subnet.space.Donate()
 	if !ok {
-		free := alloc.space.NumFreeAddresses()
+		free := subnet.space.NumFreeAddresses()
 		common.Assert(free == 0)
-		alloc.debugln("No space to give to peer", to)
+		alloc.debugln("No space in subnet", subnet, "to give to peer", to)
 		return
 	}
 	end := address.Add(start, size)
 	alloc.debugln("Giving range", start, end, size, "to", to)
-	alloc.ring.GrantRangeToHost(start, end, to)
+	subnet.ring.GrantRangeToHost(start, end, to)
 }
 
 func (alloc *Allocator) assertInvariants() {
 	// We need to ensure all ranges the ring thinks we own have
 	// a corresponding space in the space set, and vice versa
-	checkSpace := space.New()
-	checkSpace.AddRanges(alloc.ring.OwnedRanges())
-	ranges := checkSpace.OwnedRanges()
-	spaces := alloc.space.OwnedRanges()
+	for _, subnet := range alloc.subnets {
+		checkSpace := space.New()
+		checkSpace.AddRanges(subnet.ring.OwnedRanges())
+		ranges := checkSpace.OwnedRanges()
+		spaces := subnet.space.OwnedRanges()
 
-	common.Assert(len(ranges) == len(spaces))
+		common.Assert(len(ranges) == len(spaces))
 
-	for i := 0; i < len(ranges); i++ {
-		r := ranges[i]
-		s := spaces[i]
-		common.Assert(s.Start == r.Start && s.End == r.End)
+		for i := 0; i < len(ranges); i++ {
+			r := ranges[i]
+			s := spaces[i]
+			common.Assert(s.Start == r.Start && s.End == r.End)
+		}
 	}
 }
 
 func (alloc *Allocator) reportFreeSpace() {
-	ranges := alloc.ring.OwnedRanges()
-	if len(ranges) == 0 {
-		return
-	}
+	for _, subnet := range alloc.subnets {
+		ranges := subnet.ring.OwnedRanges()
+		if len(ranges) == 0 {
+			continue
+		}
 
-	freespace := make(map[address.Address]address.Offset)
-	for _, r := range ranges {
-		freespace[r.Start] = alloc.space.NumFreeAddressesInRange(r.Start, r.End)
+		freespace := make(map[address.Address]address.Offset)
+		for _, r := range ranges {
+			freespace[r.Start] = subnet.space.NumFreeAddressesInRange(r.Start, r.End)
+		}
+		subnet.ring.ReportFree(freespace)
 	}
-	alloc.ring.ReportFree(freespace)
 }
 
 // Owned addresses
