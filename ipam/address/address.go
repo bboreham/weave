@@ -13,12 +13,31 @@ type Range struct {
 	Start, End Address // [Start, End); Start <= End
 }
 
+type CIDR struct {
+	Start     Address
+	PrefixLen int
+}
+
 func ParseIP(s string) (Address, error) {
 	if ip := net.ParseIP(s); ip != nil {
 		return FromIP4(ip), nil
 	}
 	return 0, &net.ParseError{Type: "IP Address", Text: s}
 }
+
+func ParseCIDR(s string) (Address, CIDR, error) {
+	if ip, ipnet, err := net.ParseCIDR(s); err != nil {
+		return 0, CIDR{}, err
+	} else if ipnet.IP.To4() == nil {
+		return 0, CIDR{}, &net.ParseError{Type: "Non-IPv4 address not supported", Text: s}
+	} else {
+		prefixLen, _ := ipnet.Mask.Size()
+		return FromIP4(ip), CIDR{Start: FromIP4(ipnet.IP), PrefixLen: prefixLen}, nil
+	}
+}
+
+func (cidr CIDR) Size() Offset { return 1 << uint(32-cidr.PrefixLen) }
+func (cidr CIDR) Blank() bool  { return cidr.Start == 0 }
 
 // FromIP4 converts an ipv4 address to our integer address type
 func FromIP4(ip4 net.IP) (r Address) {
