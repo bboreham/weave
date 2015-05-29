@@ -482,11 +482,6 @@ func (alloc *Allocator) string() string {
 	return buf.String()
 }
 
-func (alloc *Allocator) consensus() []router.PeerName {
-	_, val := alloc.paxos.Consensus()
-	return val.Value
-}
-
 // Ensure we are making progress towards an established ring
 func (alloc *Allocator) establishRing() {
 	if !alloc.ring.Empty() || alloc.paxosTicker != nil {
@@ -494,10 +489,10 @@ func (alloc *Allocator) establishRing() {
 	}
 
 	alloc.propose()
-	if cons := alloc.consensus(); cons != nil {
+	if ok, cons := alloc.paxos.Consensus(); ok {
 		// If the quorum was 1, then proposing immediately
 		// leads to consensus
-		alloc.createRing(cons)
+		alloc.createRing(cons.Value)
 	} else {
 		// re-try until we get consensus
 		alloc.paxosTicker = time.NewTicker(paxosInterval)
@@ -606,8 +601,8 @@ func (alloc *Allocator) update(msg []byte) error {
 				alloc.gossip.GossipBroadcast(alloc.Gossip())
 			}
 
-			if cons := alloc.consensus(); cons != nil {
-				alloc.createRing(cons)
+			if ok, cons := alloc.paxos.Consensus(); ok {
+				alloc.createRing(cons.Value)
 			}
 		}
 	}
