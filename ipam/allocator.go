@@ -220,6 +220,7 @@ func (alloc *Allocator) AllocateInSubnet(ident string, cidr address.CIDR, cancel
 	subnetChan := make(chan *subnet)
 	alloc.actionChan <- func() {
 		subnetChan <- alloc.subnets[cidr]
+		// fixme: what if subnet doesn't exist?
 	}
 	subnet := <-subnetChan
 	resultChan := make(chan allocateResult)
@@ -378,7 +379,17 @@ func (alloc *Allocator) OnGossipUnicast(sender router.PeerName, msg []byte) erro
 		switch msg[0] {
 		case msgSpaceRequest:
 			// some other peer asked us for space
-			alloc.donateSpace(sender)
+			decoder := gob.NewDecoder(bytes.NewReader(msg[1:]))
+			var cidr address.CIDR
+			if err := decoder.Decode(&cidr); err != nil {
+				resultChan <- err
+				return
+			}
+			if subnet, found := alloc.subnets[cidr]; found {
+				alloc.donateSpace(subnet, sender)
+			} else {
+				alloc.infof("Received space request for subnet I don't know about: %s", cidr)
+			}
 			resultChan <- nil
 		case msgRingUpdate:
 			resultChan <- alloc.update(msg[1:])
@@ -620,8 +631,18 @@ func (alloc *Allocator) propose(subnet *subnet) {
 	alloc.gossip.GossipBroadcast(alloc.Gossip())
 }
 
-func (alloc *Allocator) sendRequest(dest router.PeerName, kind byte) {
-	msg := router.Concat([]byte{kind}, alloc.encode())
+func (alloc *Allocator) sendSpaceRequest(dest router.PeerName, subnet address.CIDR) {
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	if err := enc.Encode(subnet); err != nil {
+		panic(err)
+	}
+	msg := router.Concat([]byte{msgSpaceRequest}, buf.Bytes())
+	alloc.gossip.GossipUnicast(dest, msg)
+}
+
+func (alloc *Allocator) sendRingUpdate(dest router.PeerName) {
+	msg := router.Concat([]byte{msgRingUpdate}, alloc.encode())
 	alloc.gossip.GossipUnicast(dest, msg)
 }
 
@@ -630,6 +651,10 @@ func (alloc *Allocator) update(msg []byte) error {
 	decoder := gob.NewDecoder(reader)
 	var data gossipState
 	var err error
+
+	if err := decoder.Decode(&data); err != nil {
+		return err
+	}
 
 	// fixme: move this up to higher level
 	deltat := time.Unix(data.Now, 0).Sub(alloc.now())
@@ -686,7 +711,7 @@ func (alloc *Allocator) donateSpace(subnet *subnet, to router.PeerName) {
 	// This serves to both tell him of any space we might
 	// have given him, or tell him where he might find some
 	// more.
-	defer alloc.sendRequest(to, msgRingUpdate) // fixme: specific subnet?
+	defer alloc.sendRingUpdate(to) // fixme: specific subnet?
 
 	alloc.debugln("Peer", to, "asked me for space")
 	start, size, ok := subnet.space.Donate()

@@ -42,7 +42,7 @@ func (g *allocate) Try(alloc *Allocator) bool {
 	// out of space
 	if donor, err := g.subnet.ring.ChoosePeerToAskForSpace(); err == nil {
 		alloc.debugln("Decided to ask peer", donor, "for space in subnet", g.subnet)
-		alloc.sendRequest(donor, msgSpaceRequest) // fixme: needs to send subnet
+		alloc.sendSpaceRequest(donor, g.subnet.cidr)
 	}
 
 	return false
