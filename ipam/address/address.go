@@ -1,8 +1,10 @@
 package address
 
 import (
-	"github.com/weaveworks/weave/common"
+	"fmt"
 	"net"
+
+	"github.com/weaveworks/weave/common"
 )
 
 // Using 32-bit integer to represent IPv4 address
@@ -38,6 +40,10 @@ func ParseCIDR(s string) (Address, CIDR, error) {
 
 func (cidr CIDR) Size() Offset { return 1 << uint(32-cidr.PrefixLen) }
 func (cidr CIDR) Blank() bool  { return cidr.Start == 0 }
+
+func (cidr CIDR) String() string {
+	return fmt.Sprintf("%s/%d", cidr.Start.String(), cidr.PrefixLen)
+}
 
 // FromIP4 converts an ipv4 address to our integer address type
 func FromIP4(ip4 net.IP) (r Address) {
