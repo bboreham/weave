@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"sort"
 	"time"
 
@@ -42,13 +41,10 @@ type operation interface {
 }
 
 type subnet struct {
-	// fixme: change 'subnetStart' to 'start' etc
-	subnetStart address.Address // start address of space all peers are allocating from
-	subnetSize  address.Offset  // length of space all peers are allocating from
-	prefixLen   int             // network prefix length, e.g. 24 for a /24 network
-	ring        *ring.Ring      // information on ranges owned by all peers
-	space       *space.Space    // more detail on ranges owned by us
-	paxos       *paxos.Node
+	cidr  address.CIDR
+	ring  *ring.Ring   // information on ranges owned by all peers
+	space *space.Space // more detail on ranges owned by us
+	paxos *paxos.Node
 }
 
 // Allocator brings together Ring and space.Set, and does the
@@ -59,8 +55,8 @@ type Allocator struct {
 	ourName          router.PeerName
 	ourUID           router.PeerUID
 	quorum           uint
-	subnets          map[address.Address]*subnet // mapped by start address
-	defaultSubnet    *subnet
+	subnets          map[address.CIDR]*subnet // mapped by start address
+	defaultSubnet    address.CIDR
 	owned            map[string]address.Address // who owns what address, indexed by container-ID
 	nicknames        map[router.PeerName]string // so we can map nicknames for rmpeer
 	pendingAllocates []operation                // held until we get some free space
@@ -71,27 +67,14 @@ type Allocator struct {
 	now              func() time.Time
 }
 
-func (alloc *Allocator) AddSubnet(subnetStr string) error {
-	_, subnetCIDR, err := net.ParseCIDR(subnetStr)
-	if err != nil {
-		return err
-	}
-	if subnetCIDR.IP.To4() == nil {
-		return errors.New("Non-IPv4 address not supported")
-	}
-	// Get the size of the network from the mask
-	ones, bits := subnetCIDR.Mask.Size()
-	var subnetSize address.Offset = 1 << uint(bits-ones)
-	if subnetSize < 4 {
+func (alloc *Allocator) AddSubnet(cidr address.CIDR) error {
+	if cidr.Size() < 4 {
 		return errors.New("Allocation subnet too small")
 	}
-	subnetStart := address.FromIP4(subnetCIDR.IP)
 	subnetData := &subnet{
-		subnetStart: subnetStart,
-		subnetSize:  subnetSize,
-		prefixLen:   ones,
+		cidr: cidr,
 		// per RFC 1122, don't allocate the first and last address in the subnet
-		ring:  ring.New(address.Add(subnetStart, 1), address.Add(subnetStart, subnetSize-1), alloc.ourName),
+		ring:  ring.New(address.Add(cidr.Start, 1), address.Add(cidr.Start, cidr.Size()-1), alloc.ourName),
 		paxos: paxos.NewNode(alloc.ourName, alloc.ourUID, alloc.quorum),
 	}
 	return alloc.AddSubnetData(subnetData)
@@ -103,7 +86,7 @@ func NewAllocator(ourName router.PeerName, ourUID router.PeerUID, ourNickname st
 		ourName:   ourName,
 		ourUID:    ourUID,
 		quorum:    quorum,
-		subnets:   make(map[address.Address]*subnet),
+		subnets:   make(map[address.CIDR]*subnet),
 		owned:     make(map[string]address.Address),
 		nicknames: map[router.PeerName]string{ourName: ourNickname},
 		now:       time.Now,
@@ -217,10 +200,10 @@ func (alloc *Allocator) AddSubnetData(subnetData *subnet) error {
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
 		// fixme: check if we already have an overlapping subnet
-		alloc.subnets[subnetData.subnetStart] = subnetData
+		alloc.subnets[subnetData.cidr] = subnetData
 		// First one added is the default subnet for allocations where user doesn't specify
-		if alloc.defaultSubnet == nil {
-			alloc.defaultSubnet = subnetData
+		if alloc.defaultSubnet.Blank() {
+			alloc.defaultSubnet = subnetData.cidr
 		}
 	}
 	return <-resultChan
@@ -228,7 +211,12 @@ func (alloc *Allocator) AddSubnetData(subnetData *subnet) error {
 
 // Allocate (Sync) - get IP address for container with given name
 // if there isn't any space we block indefinitely
-func (alloc *Allocator) Allocate(ident string, subnet address.Address, cancelChan <-chan bool) (address.Address, error) {
+func (alloc *Allocator) Allocate(ident string, cidr address.CIDR, cancelChan <-chan bool) (address.Address, error) {
+	subnetChan := make(chan *subnet)
+	alloc.actionChan <- func() {
+		subnetChan <- alloc.subnets[cidr]
+	}
+	subnet := <-subnetChan
 	resultChan := make(chan allocateResult)
 	op := &allocate{subnet: subnet, resultChan: resultChan, ident: ident,
 		hasBeenCancelled: hasBeenCancelled(cancelChan)}
@@ -410,15 +398,15 @@ type gossipState struct {
 }
 
 type gossipStateSubnet struct {
-	Subnet address.Address
-	Paxos  paxos.GossipState
-	Ring   *ring.Ring
+	CIDR  address.CIDR
+	Paxos paxos.GossipState
+	Ring  *ring.Ring
 }
 
 func (alloc *Allocator) encode() []byte {
 	gss := make([]gossipStateSubnet, 0, len(alloc.subnets))
-	for subnetStart, subnet := range alloc.subnets {
-		gs := gossipStateSubnet{Subnet: subnetStart}
+	for cidr, subnet := range alloc.subnets {
+		gs := gossipStateSubnet{CIDR: cidr}
 		// We're only interested in Paxos until we have a Ring.
 		if subnet.ring.Empty() {
 			gs.Paxos = subnet.paxos.GossipState()
@@ -515,14 +503,14 @@ func (alloc *Allocator) actorLoop(actionChan <-chan func()) {
 // Helper functions
 
 func (subnet *subnet) FprintWithNicknames(w io.Writer, nicknames map[router.PeerName]string) {
-	fmt.Fprintf(w, "Subnet %s/%d\n", subnet.subnetStart.String(), subnet.prefixLen)
+	fmt.Fprintf(w, "Subnet %s/%d\n", subnet.cidr.Start.String(), subnet.cidr.PrefixLen)
 
 	if subnet.ring.Empty() {
 		fmt.Fprintf(w, "Awaiting consensus: %s", subnet.paxos.String())
 	} else {
 		localFreeSpace := subnet.space.NumFreeAddresses()
 		remoteFreeSpace := subnet.ring.TotalRemoteFree()
-		percentFree := 100 * float64(localFreeSpace+remoteFreeSpace) / float64(subnet.subnetSize)
+		percentFree := 100 * float64(localFreeSpace+remoteFreeSpace) / float64(subnet.cidr.Size())
 		fmt.Fprintf(w, "  Free IPs: ~%.1f%%, %d local, ~%d remote\n",
 			percentFree, localFreeSpace, remoteFreeSpace)
 
@@ -649,7 +637,7 @@ func (alloc *Allocator) update(msg []byte) error {
 	shouldBroadcast := false
 
 	for _, s := range data.Subnets {
-		if subnet, found := alloc.subnets[s.Subnet]; found {
+		if subnet, found := alloc.subnets[s.CIDR]; found {
 			// only one of Ring and Paxos should be present.  And we
 			// shouldn't get updates for a empty Ring. But tolerate
 			// them just in case.
