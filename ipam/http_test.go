@@ -104,6 +104,7 @@ func TestHttp2Subnet(t *testing.T) {
 		testCIDR1   = "10.0.3.8/29"
 		testCIDR2   = "10.2.0.0/16"
 		testAddr2   = "10.2.0.1/16"
+		testAddr3   = "10.8.2.1/16" // Not in any of the above subnets
 	)
 
 	alloc := makeAllocatorWithMockGossip(t, "08:00:27:01:c3:9a", testCIDR1, 1)
@@ -132,6 +133,10 @@ func TestHttp2Subnet(t *testing.T) {
 	wt.AssertEqualString(t, cidr1c, testAddr1, "address")
 	cidr2c := HTTPPost(t, allocInSubnetURL(port, testCIDR2, container3))
 	wt.AssertEqualString(t, cidr2c, testAddr2, "address")
+
+	// Now an address that should not be treated as a subnet
+	cidrx := HTTPPost(t, allocInSubnetURL(port, testAddr3, containerID))
+	wt.AssertEqualString(t, cidrx, testAddr3, "address")
 }
 
 func TestBadHttp(t *testing.T) {
