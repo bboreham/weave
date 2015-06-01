@@ -38,10 +38,10 @@ func (alloc *Allocator) HandleHTTP(router *mux.Router) {
 		vars := mux.Vars(r)
 		ident := vars["id"]
 		cidr := vars["ip"] + "/" + vars["prefixlen"]
-		if _, cidr, err := address.ParseCIDR(cidr); err != nil {
+		if addr, cidr, err := address.ParseCIDR(cidr); err != nil {
 			badRequest(w, err)
 			return
-		} else {
+		} else if addr == cidr.Start {
 			newAddr, err := alloc.AllocateInSubnet(ident, cidr, closedChan)
 			if err != nil {
 				badRequest(w, fmt.Errorf("Unable to allocate: %s", err))
@@ -49,6 +49,8 @@ func (alloc *Allocator) HandleHTTP(router *mux.Router) {
 			}
 
 			fmt.Fprintf(w, "%s/%d", newAddr.String(), cidr.PrefixLen)
+		} else {
+			fmt.Fprintf(w, "%s/%d", addr.String(), cidr.PrefixLen)
 		}
 	})
 
