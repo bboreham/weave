@@ -87,13 +87,6 @@ func (alloc *Allocator) findOrCreateSubnet(cidr address.CIDR) *subnet {
 	return subnet
 }
 
-func (alloc *Allocator) AddSubnet(cidr address.CIDR) error {
-	if cidr.Size() < 4 {
-		return errors.New("Allocation subnet too small")
-	}
-	return alloc.AddSubnetData(alloc.subnetData(cidr))
-}
-
 // NewAllocator creates and initialises a new Allocator
 func NewAllocator(ourName router.PeerName, ourUID router.PeerUID, ourNickname string, quorum uint) *Allocator {
 	return &Allocator{
@@ -209,15 +202,19 @@ func hasBeenCancelled(cancelChan <-chan bool) func() bool {
 
 // Actor client API
 
-func (alloc *Allocator) AddSubnetData(subnetData *subnet) error {
+func (alloc *Allocator) SetDefaultSubnet(cidrStr string) error {
+	_, cidr, err := address.ParseCIDR(cidrStr)
+	if err != nil {
+		panic(err)
+	}
+	if cidr.Size() < 4 {
+		return errors.New("Allocation subnet too small")
+	}
+	subnetData := alloc.subnetData(cidr)
 	resultChan := make(chan error)
 	alloc.actionChan <- func() {
-		// fixme: check if we already have an overlapping subnet
 		alloc.subnets[subnetData.cidr] = subnetData
-		// First one added is the default subnet for allocations where user doesn't specify
-		if alloc.defaultSubnet.Blank() {
-			alloc.defaultSubnet = subnetData.cidr
-		}
+		alloc.defaultSubnet = subnetData.cidr
 		resultChan <- nil
 	}
 	return <-resultChan
