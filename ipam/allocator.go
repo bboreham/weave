@@ -45,6 +45,7 @@ type subnet struct {
 	ring  *ring.Ring   // information on ranges owned by all peers
 	space *space.Space // more detail on ranges owned by us
 	paxos *paxos.Node
+	owned map[string]address.Address // who owns what address, indexed by container-ID
 }
 
 // Allocator brings together Ring and space.Set, and does the
@@ -57,7 +58,6 @@ type Allocator struct {
 	quorum           uint
 	subnets          map[address.CIDR]*subnet // mapped by start address
 	defaultSubnet    address.CIDR
-	owned            map[string]address.Address // who owns what address, indexed by container-ID
 	nicknames        map[router.PeerName]string // so we can map nicknames for rmpeer
 	pendingAllocates []operation                // held until we get some free space
 	pendingClaims    []operation                // held until we know who owns the space
@@ -74,6 +74,7 @@ func (alloc *Allocator) subnetData(cidr address.CIDR) *subnet {
 		ring:  ring.New(address.Add(cidr.Start, 1), address.Add(cidr.Start, cidr.Size()-1), alloc.ourName),
 		space: &space.Space{},
 		paxos: paxos.NewNode(alloc.ourName, alloc.ourUID, alloc.quorum),
+		owned: make(map[string]address.Address),
 	}
 }
 
@@ -91,7 +92,6 @@ func NewAllocator(ourName router.PeerName, ourUID router.PeerUID, ourNickname st
 		ourUID:    ourUID,
 		quorum:    quorum,
 		subnets:   make(map[address.CIDR]*subnet),
-		owned:     make(map[string]address.Address),
 		nicknames: map[router.PeerName]string{ourName: ourNickname},
 		now:       time.Now,
 	}
@@ -254,17 +254,15 @@ func (alloc *Allocator) ContainerDied(ident string) error {
 func (alloc *Allocator) free(ident string) error {
 	errChan := make(chan error)
 	alloc.actionChan <- func() {
-		addr, found := alloc.owned[ident]
-		if found {
-			// note if we stored the prefixlen / mask we wouldn't have to iterate
-			for _, subnet := range alloc.subnets {
-				if subnet.ring.Contains(addr) {
-					subnet.space.Free(addr)
-				}
+		found := false
+		// Free any addresses for this container in any subnet
+		for _, subnet := range alloc.subnets {
+			if addr, ok := subnet.owned[ident]; ok {
+				subnet.space.Free(addr)
+				delete(subnet.owned, ident)
+				found = true
 			}
-			// fixme: error if not found?
 		}
-		delete(alloc.owned, ident)
 
 		// Also remove any pending ops
 		found = alloc.cancelOpsFor(&alloc.pendingAllocates, ident) || found
@@ -762,14 +760,16 @@ func (alloc *Allocator) reportFreeSpace() {
 
 // Owned addresses
 
-func (alloc *Allocator) addOwned(ident string, addr address.Address) {
-	alloc.owned[ident] = addr
+func (subnet *subnet) addOwned(ident string, addr address.Address) {
+	subnet.owned[ident] = addr
 }
 
 func (alloc *Allocator) findOwner(addr address.Address) string {
-	for ident, candidate := range alloc.owned {
-		if candidate == addr {
-			return ident
+	for _, subnet := range alloc.subnets {
+		for ident, candidate := range subnet.owned {
+			if candidate == addr {
+				return ident
+			}
 		}
 	}
 	return ""

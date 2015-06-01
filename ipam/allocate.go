@@ -25,7 +25,7 @@ func (g *allocate) Try(alloc *Allocator) bool {
 	}
 
 	// If we have previously stored an address for this container, return it.
-	if addr, found := alloc.owned[g.ident]; found {
+	if addr, found := g.subnet.owned[g.ident]; found {
 		g.resultChan <- allocateResult{addr, nil}
 		return true
 	}
@@ -34,7 +34,7 @@ func (g *allocate) Try(alloc *Allocator) bool {
 
 	if ok, addr := g.subnet.space.Allocate(); ok {
 		alloc.debugln("Allocated", addr, "for", g.ident)
-		alloc.addOwned(g.ident, addr)
+		g.subnet.addOwned(g.ident, addr)
 		g.resultChan <- allocateResult{addr, nil}
 		return true
 	}

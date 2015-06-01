@@ -57,7 +57,7 @@ func (c *claim) Try(alloc *Allocator) bool {
 					c.resultChan <- err
 					return true
 				}
-				alloc.addOwned(c.ident, c.addr)
+				subnet.addOwned(c.ident, c.addr)
 				c.resultChan <- nil
 				return true
 			}
