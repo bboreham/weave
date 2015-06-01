@@ -539,8 +539,13 @@ func (subnet *subnet) FprintWithNicknames(w io.Writer, nicknames map[router.Peer
 func (alloc *Allocator) string() string {
 	var buf bytes.Buffer
 
+	i := 0
 	for _, subnet := range alloc.subnets {
 		subnet.FprintWithNicknames(&buf, alloc.nicknames)
+		i++
+		if i < len(alloc.subnets) {
+			fmt.Fprint(&buf, "\n")
+		}
 	}
 	if len(alloc.pendingAllocates)+len(alloc.pendingClaims) > 0 {
 		fmt.Fprintf(&buf, "\nPending requests for ")
