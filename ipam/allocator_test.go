@@ -73,14 +73,16 @@ func TestAllocFree2Subnets(t *testing.T) {
 	defer alloc.Stop()
 	_, cidr1, _ := address.ParseCIDR(subnet1)
 	_, cidr2, _ := address.ParseCIDR(subnet2)
-	alloc.AddSubnet(cidr2)
 
 	alloc.claimRingForTesting()
 	addr1, _ := alloc.AllocateInSubnet(container1, cidr1, nil)
 	wt.AssertEqualString(t, addr1.String(), testAddr1, "address")
 
+	ExpectBroadcastMessage(alloc, nil) // proposes consensus
+	ExpectBroadcastMessage(alloc, nil) // achieves consensus
 	addr2, _ := alloc.AllocateInSubnet(container1, cidr2, nil)
 	wt.AssertEqualString(t, addr2.String(), testAddr2, "address")
+	CheckAllExpectedMessagesSent(alloc)
 
 	// Ask for the first container again and we should get the same addresses again
 	addr1a, _ := alloc.AllocateInSubnet(container1, cidr1, nil)

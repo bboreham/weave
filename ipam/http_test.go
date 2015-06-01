@@ -107,15 +107,17 @@ func TestHttp2Subnet(t *testing.T) {
 	)
 
 	alloc := makeAllocatorWithMockGossip(t, "08:00:27:01:c3:9a", testCIDR1, 1)
-	alloc.addSubnetForTesting(testCIDR2)
 	port := listenHTTP(alloc)
 
 	alloc.claimRingForTesting()
 	cidr1a := HTTPPost(t, allocInSubnetURL(port, testCIDR1, containerID))
 	wt.AssertEqualString(t, cidr1a, testAddr1, "address")
 
+	ExpectBroadcastMessage(alloc, nil) // proposes consensus
+	ExpectBroadcastMessage(alloc, nil) // achieves consensus
 	cidr2a := HTTPPost(t, allocInSubnetURL(port, testCIDR2, containerID))
 	wt.AssertEqualString(t, cidr2a, testAddr2, "address")
+	CheckAllExpectedMessagesSent(alloc)
 
 	// Ask the http server for a pair of addresses for another container and check they're different
 	cidr1b := HTTPPost(t, allocInSubnetURL(port, testCIDR1, container2))
