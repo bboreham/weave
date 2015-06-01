@@ -146,14 +146,6 @@ func makeAllocator(name string, cidrStr string, quorum uint) *Allocator {
 	return alloc
 }
 
-func (alloc *Allocator) addSubnetForTesting(cidrStr string) {
-	_, cidr, err := address.ParseCIDR(cidrStr)
-	if err != nil {
-		panic(err)
-	}
-	alloc.AddSubnet(cidr)
-}
-
 func makeAllocatorWithMockGossip(t *testing.T, name string, universeCIDR string, quorum uint) *Allocator {
 	alloc := makeAllocator(name, universeCIDR, quorum)
 	gossip := &mockGossipComms{t: t, name: name}
