@@ -67,17 +67,21 @@ type Allocator struct {
 	now              func() time.Time
 }
 
+func (alloc *Allocator) subnetData(cidr address.CIDR) *subnet {
+	return &subnet{
+		cidr: cidr,
+		// per RFC 1122, don't allocate the first and last address in the subnet
+		ring:  ring.New(address.Add(cidr.Start, 1), address.Add(cidr.Start, cidr.Size()-1), alloc.ourName),
+		space: &space.Space{},
+		paxos: paxos.NewNode(alloc.ourName, alloc.ourUID, alloc.quorum),
+	}
+}
+
 func (alloc *Allocator) AddSubnet(cidr address.CIDR) error {
 	if cidr.Size() < 4 {
 		return errors.New("Allocation subnet too small")
 	}
-	subnetData := &subnet{
-		cidr: cidr,
-		// per RFC 1122, don't allocate the first and last address in the subnet
-		ring:  ring.New(address.Add(cidr.Start, 1), address.Add(cidr.Start, cidr.Size()-1), alloc.ourName),
-		paxos: paxos.NewNode(alloc.ourName, alloc.ourUID, alloc.quorum),
-	}
-	return alloc.AddSubnetData(subnetData)
+	return alloc.AddSubnetData(alloc.subnetData(cidr))
 }
 
 // NewAllocator creates and initialises a new Allocator
@@ -205,13 +209,14 @@ func (alloc *Allocator) AddSubnetData(subnetData *subnet) error {
 		if alloc.defaultSubnet.Blank() {
 			alloc.defaultSubnet = subnetData.cidr
 		}
+		resultChan <- nil
 	}
 	return <-resultChan
 }
 
 // Allocate (Sync) - get IP address for container with given name
 // if there isn't any space we block indefinitely
-func (alloc *Allocator) Allocate(ident string, cidr address.CIDR, cancelChan <-chan bool) (address.Address, error) {
+func (alloc *Allocator) AllocateInSubnet(ident string, cidr address.CIDR, cancelChan <-chan bool) (address.Address, error) {
 	subnetChan := make(chan *subnet)
 	alloc.actionChan <- func() {
 		subnetChan <- alloc.subnets[cidr]
@@ -327,6 +332,9 @@ func (alloc *Allocator) AdminTakeoverRanges(peerNameOrNickname string) error {
 		delete(alloc.nicknames, peername)
 		for _, subnet := range alloc.subnets {
 			newRanges, err := subnet.ring.Transfer(peername, alloc.ourName)
+			if err != nil {
+				break
+			}
 			subnet.space.AddRanges(newRanges)
 		}
 		resultChan <- err

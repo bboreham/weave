@@ -128,17 +128,20 @@ func CheckAllExpectedMessagesSent(allocs ...*Allocator) {
 	}
 }
 
-func makeAllocator(name string, cidr string, quorum uint) *Allocator {
+func makeAllocator(name string, cidrStr string, quorum uint) *Allocator {
 	peername, err := router.PeerNameFromString(name)
 	if err != nil {
 		panic(err)
 	}
 
-	alloc, err := NewAllocator(peername, router.PeerUID(rand.Int63()),
-		"nick-"+name, cidr, quorum)
+	alloc := NewAllocator(peername, router.PeerUID(rand.Int63()),
+		"nick-"+name, quorum)
+	_, cidr, err := address.ParseCIDR(cidrStr)
 	if err != nil {
 		panic(err)
 	}
+	alloc.subnets[cidr] = alloc.subnetData(cidr)
+	alloc.defaultSubnet = cidr
 
 	return alloc
 }
@@ -156,14 +159,25 @@ func (alloc *Allocator) claimRingForTesting(allocs ...*Allocator) {
 	for _, alloc2 := range allocs {
 		peers = append(peers, alloc2.ourName)
 	}
-	alloc.ring.ClaimForPeers(normalizeConsensus(peers))
-	alloc.space.AddRanges(alloc.ring.OwnedRanges())
+	for _, subnet := range alloc.subnets {
+		subnet.ring.ClaimForPeers(normalizeConsensus(peers))
+		subnet.space.AddRanges(subnet.ring.OwnedRanges())
+	}
+}
+
+func (alloc *Allocator) Allocate(ident string, cancelChan <-chan bool) (address.Address, error) {
+	// fixme: move to allocator.go and make thread-safe and add error-checking
+	return alloc.AllocateInSubnet(ident, alloc.defaultSubnet, cancelChan)
 }
 
 func (alloc *Allocator) NumFreeAddresses() address.Offset {
 	resultChan := make(chan address.Offset)
 	alloc.actionChan <- func() {
-		resultChan <- alloc.space.NumFreeAddresses()
+		var total address.Offset
+		for _, subnet := range alloc.subnets {
+			total += subnet.space.NumFreeAddresses()
+		}
+		resultChan <- total
 	}
 	return <-resultChan
 }
