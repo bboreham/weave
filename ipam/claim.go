@@ -29,11 +29,13 @@ func (c *claim) Try(alloc *Allocator) bool {
 
 	for _, subnet := range alloc.subnets {
 		if subnet.ring.Contains(c.addr) {
+			// If this ring doesn't know, it must be empty.  We will have initiated the
+			// bootstrap of the ring, so wait until we find some owner for this
+			// range (might be us).
 			owner := subnet.ring.Owner(c.addr)
-			// what to do if ring is being bootstrapped? Implies this is not a restart
 			if owner == router.UnknownPeerName {
-				c.resultChan <- fmt.Errorf("Unable to establish ownership of address %s", c.addr)
-				return true
+				alloc.infof("Unable to establish ownership of address %s; will try later", c.addr)
+				return false
 			}
 			if owner != alloc.ourName {
 				// fixme: put these four lines - repeated in ring.go - into a helper function
