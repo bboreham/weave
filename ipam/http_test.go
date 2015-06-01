@@ -55,6 +55,10 @@ func allocURL(port int, containerID string) string {
 	return fmt.Sprintf("http://localhost:%d/ip/%s", port, containerID)
 }
 
+func allocInSubnetURL(port int, cidr string, containerID string) string {
+	return fmt.Sprintf("http://localhost:%d/ip/%s/%s", port, containerID, cidr)
+}
+
 func TestHttp(t *testing.T) {
 	var (
 		containerID = "deadbeef"
@@ -89,6 +93,43 @@ func TestHttp(t *testing.T) {
 	// Would like to shut down the http server at the end of this test
 	// but it's complicated.
 	// See https://groups.google.com/forum/#!topic/golang-nuts/vLHWa5sHnCE
+}
+
+func TestHttp2Subnet(t *testing.T) {
+	var (
+		containerID = "deadbeef"
+		container2  = "baddf00d"
+		container3  = "b01df00d"
+		testAddr1   = "10.0.3.9/29"
+		testCIDR1   = "10.0.3.8/29"
+		testCIDR2   = "10.2.0.0/16"
+		testAddr2   = "10.2.0.1/16"
+	)
+
+	alloc := makeAllocatorWithMockGossip(t, "08:00:27:01:c3:9a", testCIDR1, 1)
+	alloc.addSubnetForTesting(testCIDR2)
+	port := listenHTTP(alloc)
+
+	alloc.claimRingForTesting()
+	cidr1a := HTTPPost(t, allocInSubnetURL(port, testCIDR1, containerID))
+	wt.AssertEqualString(t, cidr1a, testAddr1, "address")
+
+	cidr2a := HTTPPost(t, allocInSubnetURL(port, testCIDR2, containerID))
+	wt.AssertEqualString(t, cidr2a, testAddr2, "address")
+
+	// Ask the http server for a pair of addresses for another container and check they're different
+	cidr1b := HTTPPost(t, allocInSubnetURL(port, testCIDR1, container2))
+	wt.AssertFalse(t, cidr1b == testAddr1, "address")
+	cidr2b := HTTPPost(t, allocInSubnetURL(port, testCIDR2, container2))
+	wt.AssertFalse(t, cidr2b == testAddr2, "address")
+
+	// Now free the first one, and we should get it back when we ask
+	doHTTP("DELETE", allocURL(port, containerID))
+
+	cidr1c := HTTPPost(t, allocInSubnetURL(port, testCIDR1, container3))
+	wt.AssertEqualString(t, cidr1c, testAddr1, "address")
+	cidr2c := HTTPPost(t, allocInSubnetURL(port, testCIDR2, container3))
+	wt.AssertEqualString(t, cidr2c, testAddr2, "address")
 }
 
 func TestBadHttp(t *testing.T) {

@@ -57,6 +57,50 @@ func TestAllocFree(t *testing.T) {
 	wt.AssertEquals(t, alloc.NumFreeAddresses(), address.Offset(spaceSize))
 }
 
+func TestAllocFree2Subnets(t *testing.T) {
+	const (
+		container1 = "abcdef"
+		container2 = "baddf00d"
+		container3 = "b01df00d"
+		subnet1    = "10.0.3.0/28"
+		subnet2    = "10.0.4.0/28"
+		testAddr1  = "10.0.3.1"
+		testAddr2  = "10.0.4.1"
+		spaceSize  = 28 // 16 IP addresses in /28, minus .0 and .15, times two subnets
+	)
+
+	alloc := makeAllocatorWithMockGossip(t, "01:00:00:01:00:00", subnet1, 1)
+	defer alloc.Stop()
+	_, cidr1, _ := address.ParseCIDR(subnet1)
+	_, cidr2, _ := address.ParseCIDR(subnet2)
+	alloc.AddSubnet(cidr2)
+
+	alloc.claimRingForTesting()
+	addr1, _ := alloc.AllocateInSubnet(container1, cidr1, nil)
+	wt.AssertEqualString(t, addr1.String(), testAddr1, "address")
+
+	addr2, _ := alloc.AllocateInSubnet(container1, cidr2, nil)
+	wt.AssertEqualString(t, addr2.String(), testAddr2, "address")
+
+	// Ask for the first container again and we should get the same addresses again
+	addr1a, _ := alloc.AllocateInSubnet(container1, cidr1, nil)
+	wt.AssertEqualString(t, addr1a.String(), testAddr1, "address")
+	addr2a, _ := alloc.AllocateInSubnet(container1, cidr2, nil)
+	wt.AssertEqualString(t, addr2a.String(), testAddr2, "address")
+
+	// Now free the first container, and we should get its addresses back
+	wt.AssertSuccess(t, alloc.Free(container1))
+	addr3, _ := alloc.AllocateInSubnet(container3, cidr1, nil)
+	wt.AssertEqualString(t, addr3.String(), testAddr1, "address")
+	addr4, _ := alloc.AllocateInSubnet(container3, cidr2, nil)
+	wt.AssertEqualString(t, addr4.String(), testAddr2, "address")
+
+	alloc.ContainerDied(container2)
+	alloc.ContainerDied(container3)
+	alloc.String() // force sync-up after async call
+	wt.AssertEquals(t, alloc.NumFreeAddresses(), address.Offset(spaceSize))
+}
+
 func TestBootstrap(t *testing.T) {
 	common.InitDefaultLogging(false)
 	const (
