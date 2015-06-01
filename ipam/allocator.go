@@ -78,6 +78,15 @@ func (alloc *Allocator) subnetData(cidr address.CIDR) *subnet {
 	}
 }
 
+func (alloc *Allocator) findOrCreateSubnet(cidr address.CIDR) *subnet {
+	subnet, found := alloc.subnets[cidr]
+	if !found {
+		subnet = alloc.subnetData(cidr)
+		alloc.subnets[cidr] = subnet
+	}
+	return subnet
+}
+
 func (alloc *Allocator) AddSubnet(cidr address.CIDR) error {
 	if cidr.Size() < 4 {
 		return errors.New("Allocation subnet too small")
@@ -217,14 +226,8 @@ func (alloc *Allocator) AddSubnetData(subnetData *subnet) error {
 // Allocate (Sync) - get IP address for container with given name
 // if there isn't any space we block indefinitely
 func (alloc *Allocator) AllocateInSubnet(ident string, cidr address.CIDR, cancelChan <-chan bool) (address.Address, error) {
-	subnetChan := make(chan *subnet)
-	alloc.actionChan <- func() {
-		subnetChan <- alloc.subnets[cidr]
-		// fixme: what if subnet doesn't exist?
-	}
-	subnet := <-subnetChan
 	resultChan := make(chan allocateResult)
-	op := &allocate{subnet: subnet, resultChan: resultChan, ident: ident,
+	op := &allocate{cidr: cidr, resultChan: resultChan, ident: ident,
 		hasBeenCancelled: hasBeenCancelled(cancelChan)}
 	alloc.doOperation(op, &alloc.pendingAllocates)
 	result := <-resultChan
