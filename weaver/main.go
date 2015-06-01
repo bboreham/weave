@@ -193,12 +193,13 @@ func logFrameFunc(debug bool) weave.LogFrameFunc {
 }
 
 func createAllocator(router *weave.Router, apiPath string, iprangeCIDR string, quorum uint) *ipam.Allocator {
-	allocator, err := ipam.NewAllocator(router.Ourself.Peer.Name, router.Ourself.Peer.UID, router.Ourself.Peer.NickName, iprangeCIDR, quorum)
+	allocator := ipam.NewAllocator(router.Ourself.Peer.Name, router.Ourself.Peer.UID, router.Ourself.Peer.NickName, quorum)
+	allocator.SetInterfaces(router.NewGossip("IPallocation", allocator))
+	allocator.Start()
+	err := allocator.SetDefaultSubnet(iprangeCIDR)
 	if err != nil {
 		log.Fatal(err)
 	}
-	allocator.SetInterfaces(router.NewGossip("IPallocation", allocator))
-	allocator.Start()
 	err = updater.Start(apiPath, allocator)
 	if err != nil {
 		log.Fatal("Unable to start watcher", err)
