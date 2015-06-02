@@ -7,7 +7,8 @@ C2=10.2.1.37
 C3=10.2.2.34
 C4=10.2.2.37
 EXP=10.2.2.101
-UNIVERSE=10.2.3.0/24
+UNIVERSE=10.2.0.0/16
+SUBNET=10.2.3.0/24
 
 weave_on1() {
     assert_raises "weave_on $HOST1 $@"
@@ -46,8 +47,8 @@ start_container $HOST1 $C1/24 --name=c1
 start_container $HOST1 $C2/24 --name=c2
 start_container $HOST1 $C3/24 --name=c3
 start_container $HOST1 $C4/24 --name=c4
-start_container $HOST1        --name=c5
-start_container $HOST1        --name=c6
+start_container $HOST1 --subnet $SUBNET --name=c5
+start_container $HOST1 --subnet $SUBNET --name=c6
 C5=$(container_ip $HOST1 c5)
 C6=$(container_ip $HOST1 c6)
 
@@ -62,8 +63,8 @@ weave_on1 "expose $EXP/24"
 run_on1   "! $PING $C1"
 run_on1   "  $PING $C3"
 run_on1   "! $PING $C5"
-weave_on1 "expose"
-weave_on1 "expose"
+weave_on1 "expose --subnet $SUBNET"
+weave_on1 "expose --subnet $SUBNET"
 run_on1   "! $PING $C1"
 run_on1   "  $PING $C3"
 run_on1   "  $PING $C5"
@@ -74,8 +75,8 @@ weave_on1 "hide $EXP/24"
 weave_on1 "hide $EXP/24"
 run_on1   "! $PING $C3"
 run_on1   "  $PING $C5"
-weave_on1 "hide"
-weave_on1 "hide"
+weave_on1 "hide --subnet $SUBNET"
+weave_on1 "hide --subnet $SUBNET"
 run_on1   "! $PING $C5"
 
 end_suite
