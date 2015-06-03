@@ -253,6 +253,7 @@ func (alloc *Allocator) Free(ident string, addr address.Address) error {
 		addrs := alloc.owned[ident]
 		for i := range addrs {
 			if addrs[i] == addr {
+				alloc.debugln("Freed", addr, "for", ident)
 				addrs = append(addrs[:i], addrs[i+1:]...)
 				alloc.owned[ident] = addrs
 				alloc.space.Free(addr)
