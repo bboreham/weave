@@ -750,6 +750,10 @@ ipam_cidrs() {
                     echo "IP address allocation must be enabled to use --subnet (use the -iprange option on 'weave launch')" >&2
                     return 1
                 fi
+                if ! is_cidr "$CIDR" ; then
+                    echo "$CIDR" >&2
+                    return 1
+                fi
                 CIDR_COUNT=$((CIDR_COUNT - 1))
             else
                 CIDR=$1
