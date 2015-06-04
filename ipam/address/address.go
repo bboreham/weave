@@ -40,7 +40,7 @@ func ParseCIDR(s string) (Address, CIDR, error) {
 
 func (cidr CIDR) Size() Offset { return 1 << uint(32-cidr.PrefixLen) }
 func (cidr CIDR) End() Address { return Add(cidr.Start, cidr.Size()) }
-func (cidr CIDR) Blank() bool  { return cidr.Start == 0 }
+func (cidr CIDR) Blank() bool  { return cidr.Start == 0 && cidr.PrefixLen == 0 }
 
 func (cidr CIDR) String() string {
 	return fmt.Sprintf("%s/%d", cidr.Start.String(), cidr.PrefixLen)
