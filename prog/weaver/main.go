@@ -139,16 +139,7 @@ func main() {
 	router := weave.NewRouter(config, name, nickName)
 	log.Println("Our name is", router.Ourself)
 
-	var allocator *ipam.Allocator
-	var defaultSubnet address.CIDR
-	if iprangeCIDR != "" {
-		allocator, defaultSubnet = createAllocator(router, apiPath, iprangeCIDR, ipsubnetCIDR, determineQuorum(peerCount, peers))
-	} else if peerCount > 0 {
-		log.Fatal("-initpeercount flag specified without -iprange")
-	} else {
-		router.NewGossip("IPallocation", &ipam.DummyAllocator{})
-	}
-
+	allocator, defaultSubnet := createAllocator(router, apiPath, iprangeCIDR, ipsubnetCIDR, determineQuorum(peerCount, peers))
 	router.Start()
 	if errors := router.ConnectionMaker.InitiateConnections(peers, false); len(errors) > 0 {
 		log.Fatal(errorMessages(errors))
@@ -210,6 +201,11 @@ func parseAndCheckCIDR(cidrStr string) address.CIDR {
 }
 
 func createAllocator(router *weave.Router, apiPath string, ipRangeStr string, defaultSubnetStr string, quorum uint) (*ipam.Allocator, address.CIDR) {
+	if ipRangeStr == "" {
+		// todo: check if this universe is free
+		ipRangeStr = "10.16.0.0/12"
+		defaultSubnetStr = "10.16.0.0/16"
+	}
 	ipRange := parseAndCheckCIDR(ipRangeStr)
 	defaultSubnet := ipRange
 	if defaultSubnetStr != "" {

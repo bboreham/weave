@@ -763,10 +763,6 @@ ipam_cidrs() {
     if [ $# -eq 0 ] ; then
         # If no addresses passed in, get one in the default subnet
         IPAM_CIDRS="$(http_call $CONTAINER_NAME $HTTP_PORT POST /ip/$CONTAINER_ID)"
-        if [ "$IPAM_CIDRS" = "404 page not found" ] ; then
-            echo "No IP address supplied (use the -iprange option on 'weave launch' to enable IP address allocation)" >&2
-            return 1
-        fi
         ALL_CIDRS="$IPAM_CIDRS"
     fi
     while [ $# -gt 0 ] ; do
@@ -775,10 +771,6 @@ ipam_cidrs() {
                 CIDR=$(http_call $CONTAINER_NAME $HTTP_PORT POST /ip/$CONTAINER_ID)
             else
                 CIDR=$(http_call $CONTAINER_NAME $HTTP_PORT POST /ip/$CONTAINER_ID/"${1#net:}")
-            fi
-            if [ "$CIDR" = "404 page not found" ] ; then
-                echo "IP address allocation must be enabled to use --subnet (use the -iprange option on 'weave launch')" >&2
-                return 1
             fi
             if ! is_cidr "$CIDR" ; then
                 echo "$CIDR" >&2
