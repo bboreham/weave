@@ -6,15 +6,14 @@ C1=10.2.3.78
 C2_1=10.2.3.34
 C2_2=10.2.3.35
 C2_3=10.2.3.36
-UNIVERSE=10.2.0.0/16
-DEFAULTSUBNET=10.2.4.0/24
+UNIVERSE=10.2.4.0/24
 NAME2=seetwo.weave.local
 NAME4=seefour.weave.local
 
 start_suite "Resolve names across hosts (with and without IPAM)"
 
-weave_on $HOST1 launch -iprange $UNIVERSE -defaultsubnet $DEFAULTSUBNET
-weave_on $HOST2 launch -iprange $UNIVERSE -defaultsubnet $DEFAULTSUBNET $HOST1
+weave_on $HOST1 launch -iprange $UNIVERSE
+weave_on $HOST2 launch -iprange $UNIVERSE $HOST1
 
 weave_on $HOST1 launch-dns 10.2.254.1/24
 weave_on $HOST2 launch-dns 10.2.254.2/24
