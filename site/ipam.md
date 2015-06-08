@@ -22,9 +22,9 @@ You can see which address was allocated with
     host1# weave ps $C
     a7aff7249393 7a:51:d1:09:21:78 10.2.3.1/24
 
-You may wish to run containers on different subnets, as described
-[here](features.html#application-isolation). To set a default subnet,
-launch with `-ipsubnet`:
+You may wish to [run containers on different
+subnets](features.html#application-isolation). To set a default
+subnet, launch with `-ipsubnet`:
 
     host1# weave launch -iprange 10.2.0.0/16 -ipsubnet 10.2.3.0/24
 
