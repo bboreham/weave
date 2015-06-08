@@ -742,13 +742,12 @@ ipam_claim() {
 
 # Call IPAM as necessary to allocate addresses
 # $1 is the full container id and following args are previously parsed CIDR_ARGS.
-# Return value is manual cidrs in CIDR_ARGS and IPAM cidrs in IPAM_CIDRS
-# CIDR_ARG_COUNT is left unchanged
+# Returns ALL_CIDRS and IPAM_CIDRS
 ipam_cidrs() {
     CONTAINER_ID="$1"
     shift 1
     if [ $# -gt 0 ] ; then
-        CIDR_ARGS=""
+        ALL_CIDRS=""
         IPAM_CIDRs=""
         while [ $# -gt 0 ] ; do
             if [ $# -gt 1 -a "$1" = "--subnet" ] ; then
@@ -767,8 +766,9 @@ ipam_cidrs() {
                     return 1
                 fi
                 IPAM_CIDRS="$IPAM_CIDRS $CIDR"
+                ALL_CIDRS="$ALL_CIDRS $CIDR"
             else
-                CIDR_ARGS="$CIDR_ARGS $1"
+                ALL_CIDRS="$ALL_CIDRS $1"
             fi
             shift 1
         done
@@ -780,6 +780,7 @@ ipam_cidrs() {
         echo "No IP address supplied (use the -iprange option on 'weave launch' to enable IP address allocation)" >&2
         return 1
     fi
+    ALL_CIDRS="$IPAM_CIDRS"
 }
 
 ######################################################################
@@ -1027,8 +1028,8 @@ case "$COMMAND" in
         CONTAINER=$(docker run $DNS_ARGS -d "$@")
         create_bridge
         ipam_cidrs $CONTAINER $CIDR_ARGS
-        with_container_netns_or_die $CONTAINER attach $CIDR_ARGS $IPAM_CIDRS
-        when_dns_running with_container_fqdn $CONTAINER put_dns_fqdn $CIDR_ARGS $IPAM_CIDRS
+        with_container_netns_or_die $CONTAINER attach $ALL_CIDRS
+        when_dns_running with_container_fqdn $CONTAINER put_dns_fqdn $ALL_CIDRS
         echo $CONTAINER
         ;;
     dns-args)
@@ -1046,8 +1047,8 @@ case "$COMMAND" in
         CONTAINER=$(docker start $1)
         create_bridge
         ipam_cidrs $CONTAINER $CIDR_ARGS
-        with_container_netns_or_die $CONTAINER attach $CIDR_ARGS $IPAM_CIDRS
-        when_dns_running with_container_fqdn $CONTAINER put_dns_fqdn $CIDR_ARGS $IPAM_CIDRS
+        with_container_netns_or_die $CONTAINER attach $ALL_CIDRS
+        when_dns_running with_container_fqdn $CONTAINER put_dns_fqdn $ALL_CIDRS
         echo $CONTAINER
         ;;
     attach)
@@ -1057,8 +1058,8 @@ case "$COMMAND" in
         CONTAINER=$(container_id $1)
         create_bridge
         ipam_cidrs $CONTAINER $CIDR_ARGS
-        with_container_netns $CONTAINER attach $CIDR_ARGS $IPAM_CIDRS >/dev/null
-        when_dns_running with_container_fqdn $CONTAINER put_dns_fqdn $CIDR_ARGS $IPAM_CIDRS
+        with_container_netns $CONTAINER attach $ALL_CIDRS >/dev/null
+        when_dns_running with_container_fqdn $CONTAINER put_dns_fqdn $ALL_CIDRS
         ;;
     detach)
         collect_cidr_args "$@"
@@ -1066,8 +1067,8 @@ case "$COMMAND" in
         [ $# -eq 1 ] || usage
         CONTAINER=$(container_id $1)
         ipam_cidrs $CONTAINER $CIDR_ARGS
-        with_container_netns $CONTAINER detach $CIDR_ARGS $IPAM_CIDRS >/dev/null
-        when_dns_running with_container_fqdn $CONTAINER delete_dns_fqdn $CIDR_ARGS $IPAM_CIDRS
+        with_container_netns $CONTAINER detach $ALL_CIDRS >/dev/null
+        when_dns_running with_container_fqdn $CONTAINER delete_dns_fqdn $ALL_CIDRS
         for CIDR in $IPAM_CIDRS ; do
             http_call $CONTAINER_NAME $HTTP_PORT DELETE /ip/$CONTAINER/${CIDR%/*}
         done
@@ -1107,7 +1108,7 @@ case "$COMMAND" in
             FQDN="$2"
         fi
         create_bridge --without-ethtool
-        for CIDR in $CIDR_ARGS $IPAM_CIDRS ; do
+        for CIDR in $ALL_CIDRS ; do
             if ! ip addr show dev $BRIDGE | grep -qF $CIDR ; then
                 ip addr add dev $BRIDGE $CIDR
                 arp_update $BRIDGE $CIDR
@@ -1124,7 +1125,7 @@ case "$COMMAND" in
         shift $CIDR_ARG_COUNT
         ipam_cidrs weave:expose $CIDR_ARGS
         create_bridge --without-ethtool
-        for CIDR in $CIDR_ARGS $IPAM_CIDRS ; do
+        for CIDR in $ALL_CIDRS ; do
             if ip addr show dev $BRIDGE | grep -qF $CIDR ; then
                 ip addr del dev $BRIDGE $CIDR
                 delete_iptables_rule nat WEAVE -d $CIDR ! -s $CIDR -j MASQUERADE
