@@ -211,7 +211,6 @@ func parseAndCheckCIDR(cidrStr string) address.CIDR {
 
 func createAllocator(router *weave.Router, apiPath string, ipRangeStr string, defaultSubnetStr string, quorum uint) (*ipam.Allocator, address.CIDR) {
 	ipRange := parseAndCheckCIDR(ipRangeStr)
-	allocator := ipam.NewAllocator(router.Ourself.Peer.Name, router.Ourself.Peer.UID, router.Ourself.Peer.NickName, ipRange, quorum)
 	defaultSubnet := ipRange
 	if defaultSubnetStr != "" {
 		defaultSubnet = parseAndCheckCIDR(defaultSubnetStr)
@@ -219,6 +218,7 @@ func createAllocator(router *weave.Router, apiPath string, ipRangeStr string, de
 			log.Fatalf("Default subnet %s out of bounds: %s", defaultSubnet, ipRange)
 		}
 	}
+	allocator := ipam.NewAllocator(router.Ourself.Peer.Name, router.Ourself.Peer.UID, router.Ourself.Peer.NickName, ipRange, quorum)
 
 	allocator.SetInterfaces(router.NewGossip("IPallocation", allocator))
 	allocator.Start()
