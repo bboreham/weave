@@ -40,12 +40,20 @@ func (s *Space) Clear() {
 // Walk down the free list calling f() on the in-range portions, until
 // f() returns true or we run out of free space.  Return true iff f() returned true
 func (s *Space) walkFree(rangeStart, rangeEnd address.Address, f func(start, end address.Address) bool) bool {
+	if rangeStart >= rangeEnd { // degenerate case
+		return false
+	}
 	for i := 0; i < len(s.free); i += 2 {
 		start, end := s.free[i], s.free[i+1]
+		if end <= rangeStart { // this chunk comes before the range
+			continue
+		}
 		if start >= rangeEnd {
 			// all remaining free space is completely after range
 			break
 		}
+		// at this point we know end>start && end>rangeStart && rangeEnd>start && rangeEnd>rangeStart
+		// therefore max(start, rangeStart) < min(end, rangeEnd)
 		// Restrict this block of free space to be in range
 		if start < rangeStart {
 			start = rangeStart
@@ -53,9 +61,7 @@ func (s *Space) walkFree(rangeStart, rangeEnd address.Address, f func(start, end
 		if end > rangeEnd {
 			end = rangeEnd
 		}
-		if start >= end { // no space left in range
-			continue
-		}
+		// at this point we know start<end
 		if f(start, end) {
 			return true
 		}
