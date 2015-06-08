@@ -126,8 +126,8 @@ func (s *Space) Donate(rangeStart, rangeEnd address.Address) (address.Address, a
 		return 0, 0, false
 	}
 
-	// Donate half of that biggest free range, rounding up so
-	// that the donation can't be empty
+	// Donate half of that biggest free range. Note size/2 rounds down, so
+	// the resulting donation size rounds up, and in particular can't be empty.
 	start = address.Add(start, size/2)
 
 	s.ours = subtract(s.ours, start, end)
