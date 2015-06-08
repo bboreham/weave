@@ -421,7 +421,8 @@ func (r *Ring) ChoosePeerToAskForSpace(start, end address.Address) (result route
 		// Ignore entries that don't span the range we want
 		if i+1 < len(r.Entries) && r.Entries.entry(i+1).Token-1 < start {
 			continue
-		} else if entry.Token >= end {
+		}
+		if entry.Token >= end {
 			break
 		}
 		// Ignore ranges with no free space
