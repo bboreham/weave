@@ -119,15 +119,16 @@ func (s *Space) biggestFreeRange(rangeStart, rangeEnd address.Address) (biggestS
 }
 
 func (s *Space) Donate(rangeStart, rangeEnd address.Address) (address.Address, address.Address, bool) {
-	if len(s.free) == 0 {
+	start, end := s.biggestFreeRange(rangeStart, rangeEnd)
+	size := address.Subtract(end, start)
+
+	if size == 0 {
 		return 0, 0, false
 	}
 
-	start, end := s.biggestFreeRange(rangeStart, rangeEnd)
-
 	// Donate half of that biggest free range, rounding up so
 	// that the donation can't be empty
-	start = end - address.Address((address.Subtract(end, start)+1)/2)
+	start = address.Add(start, size/2)
 
 	s.ours = subtract(s.ours, start, end)
 	s.free = subtract(s.free, start, end)
