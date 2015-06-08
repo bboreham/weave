@@ -241,22 +241,22 @@ func (alloc *Allocator) Delete(ident string) error {
 }
 
 // Free (Sync) - release single IP address for container
-func (alloc *Allocator) Free(ident string, addr address.Address) error {
+func (alloc *Allocator) Free(ident string, addrToFree address.Address) error {
 	errChan := make(chan error)
 	alloc.actionChan <- func() {
 		addrs := alloc.owned[ident]
-		for i := range addrs {
-			if addrs[i] == addr {
-				alloc.debugln("Freed", addr, "for", ident)
+		for i, ownedAddr := range addrs {
+			if ownedAddr == addrToFree {
+				alloc.debugln("Freed", addrToFree, "for", ident)
 				addrs = append(addrs[:i], addrs[i+1:]...)
 				alloc.owned[ident] = addrs
-				alloc.space.Free(addr)
+				alloc.space.Free(addrToFree)
 				errChan <- nil
 				return
 			}
 		}
 
-		errChan <- fmt.Errorf("Free: address %s not found for %s", addr, ident)
+		errChan <- fmt.Errorf("Free: address %s not found for %s", addrToFree, ident)
 	}
 	return <-errChan
 }
