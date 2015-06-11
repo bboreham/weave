@@ -41,9 +41,17 @@ func ParseCIDR(s string) (Address, CIDR, error) {
 	} else if ipnet.IP.To4() == nil {
 		return 0, CIDR{}, &net.ParseError{Type: "Non-IPv4 address not supported", Text: s}
 	} else {
-		prefixLen, _ := ipnet.Mask.Size()
-		return FromIP4(ip), CIDR{Start: FromIP4(ipnet.IP), PrefixLen: prefixLen}, nil
+		return FromIP4(ip), FromIPNet(ipnet), nil
 	}
+}
+
+func FromIPNet(ipnet *net.IPNet) CIDR {
+	prefixLen, _ := ipnet.Mask.Size()
+	return CIDR{Start: FromIP4(ipnet.IP), PrefixLen: prefixLen}
+}
+
+func (cidr CIDR) IPNet() *net.IPNet {
+	return &net.IPNet{IP: cidr.Start.IP4(), Mask: net.CIDRMask(cidr.PrefixLen, net.IPv4len*8)}
 }
 
 func (cidr CIDR) Size() Offset { return 1 << uint(32-cidr.PrefixLen) }

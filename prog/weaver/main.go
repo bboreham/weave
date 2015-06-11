@@ -24,6 +24,8 @@ import (
 
 var version = "(unreleased version)"
 
+const defaultIPRange = "10.16.0.0/12"
+
 func main() {
 
 	log.SetPrefix(weave.Protocol + " ")
@@ -197,16 +199,24 @@ func parseAndCheckCIDR(cidrStr string) address.CIDR {
 	if cidr.Size() < ipam.MinSubnetSize {
 		log.Fatalf("Allocation range smaller than minimum size %d: %s", ipam.MinSubnetSize, cidrStr)
 	}
+	if err := weavenet.CheckNetworkFree(cidr.IPNet()); err != nil {
+		// If range that user specifies overlaps with existing route, tell user but carry on.
+		log.Println("Warning:", err)
+	}
 	return cidr
 }
 
 func createAllocator(router *weave.Router, apiPath string, ipRangeStr string, defaultSubnetStr string, quorum uint) (*ipam.Allocator, address.CIDR) {
+	var ipRange address.CIDR
 	if ipRangeStr == "" {
-		// todo: check if this universe is free
-		ipRangeStr = "10.16.0.0/12"
-		defaultSubnetStr = "10.16.0.0/16"
+		_, ipnet, _ := net.ParseCIDR(defaultIPRange)
+		if err := weavenet.CheckNetworkFree(ipnet); err != nil {
+			log.Fatalf("Unable to use default IP allocation range: %s", err)
+		}
+		ipRange = address.FromIPNet(ipnet)
+	} else {
+		ipRange = parseAndCheckCIDR(ipRangeStr)
 	}
-	ipRange := parseAndCheckCIDR(ipRangeStr)
 	defaultSubnet := ipRange
 	if defaultSubnetStr != "" {
 		defaultSubnet = parseAndCheckCIDR(defaultSubnetStr)
