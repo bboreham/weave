@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/benbjohnson/clock"
-	"runtime"
 	"sync/atomic"
 )
 
@@ -59,6 +58,7 @@ type SchedQueue struct {
 	callablesH schedCallsHeap
 	schedChan  chan *schedCall
 	closeChan  chan bool
+	flushChan  chan chan struct{}
 	counter    uint64 // number of calls invoked so far (used for stats). Note: it will wrap.
 }
 
@@ -68,6 +68,7 @@ func NewSchedQueue(clock clock.Clock) *SchedQueue {
 		clock:     clock,
 		schedChan: make(chan *schedCall),
 		closeChan: make(chan bool),
+		flushChan: make(chan chan struct{}),
 	}
 	heap.Init(&cq.callablesH)
 	return &cq
@@ -91,6 +92,8 @@ func (cq *SchedQueue) Start() {
 			case <-cq.closeChan:
 				return
 			case now = <-timer.C:
+			case ch := <-cq.flushChan:
+				close(ch)
 			}
 
 			timer.Stop()
@@ -142,4 +145,12 @@ func (cq *SchedQueue) durationUntilNext(now time.Time) time.Duration {
 		return firstSched.FromNow(now)
 	}
 	return time.Duration(math.MaxInt64)
+}
+
+// ensure that the goroutine has executed any current callbacks and is
+// waiting for something new
+func (cq *SchedQueue) Flush() {
+	ch := make(chan struct{})
+	cq.flushChan <- ch
+	<-ch
 }
