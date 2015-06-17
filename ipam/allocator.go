@@ -517,8 +517,15 @@ func (alloc *Allocator) establishRing() {
 	}
 }
 
+func (alloc *Allocator) checkPeerCount(n int) {
+	if n >= int(alloc.paxos.Quorum()*2) {
+		common.Warning.Printf("[allocator] Danger: %d peers, too high for quorum %d\n", n, alloc.paxos.Quorum())
+	}
+}
+
 func (alloc *Allocator) createRing(peers []router.PeerName) {
 	alloc.debugln("Paxos consensus:", peers)
+	alloc.checkPeerCount(alloc.paxos.NodeCount())
 	alloc.ring.ClaimForPeers(normalizeConsensus(peers))
 	alloc.gossip.GossipBroadcast(alloc.Gossip())
 	alloc.ringUpdated()
@@ -614,6 +621,9 @@ func (alloc *Allocator) update(msg []byte) error {
 	// shouldn't get updates for a empty Ring. But tolerate
 	// them just in case.
 	if data.Ring != nil {
+		if alloc.ring.Empty() {
+			alloc.checkPeerCount(len(data.Ring.PeerNames()))
+		}
 		err = alloc.ring.Merge(*data.Ring)
 		if !alloc.ring.Empty() {
 			alloc.pruneNicknames()

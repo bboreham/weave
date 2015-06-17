@@ -251,6 +251,14 @@ func (node *Node) Consensus() (bool, AcceptedValue) {
 	return false, AcceptedValue{}
 }
 
+func (node *Node) NodeCount() int {
+	return len(node.knows)
+}
+
+func (node *Node) Quorum() uint {
+	return node.quorum
+}
+
 func (node *Node) String() string {
 	if ok, val := node.Consensus(); ok {
 		return fmt.Sprintf("Consensus reached with size %d", len(val.Value))
