@@ -1,11 +1,9 @@
 package net
 
 import (
-	"encoding/binary"
 	"fmt"
 	"net"
 	"syscall"
-	"unsafe"
 
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netlink/nl"
@@ -68,19 +66,8 @@ func CheckRouteExists(ifaceName string, dest net.IP) bool {
 	return found
 }
 
-// code borrowed from github.com/docker/libcontainer/netlink/
-var native binary.ByteOrder
-
-func init() {
-	var x uint32 = 0x01020304
-	if *(*byte)(unsafe.Pointer(&x)) == 0x01 {
-		native = binary.BigEndian
-	} else {
-		native = binary.LittleEndian
-	}
-}
-
 func waitForRoute(s *nl.NetlinkSocket, ifaceName string, dest net.IP) error {
+	native := nl.NativeEndian()
 	for {
 		msgs, err := s.Receive()
 		if err != nil {
