@@ -67,7 +67,6 @@ func CheckRouteExists(ifaceName string, dest net.IP) bool {
 }
 
 func waitForRoute(s *nl.NetlinkSocket, ifaceName string, dest net.IP) error {
-	native := nl.NativeEndian()
 	for {
 		msgs, err := s.Receive()
 		if err != nil {
@@ -76,22 +75,12 @@ func waitForRoute(s *nl.NetlinkSocket, ifaceName string, dest net.IP) error {
 		for _, m := range msgs {
 			switch m.Header.Type {
 			case syscall.RTM_NEWROUTE:
-				attrs, err := syscall.ParseNetlinkRouteAttr(&m)
+				route, err := netlink.DeserializeRoute(m.Data)
 				if err != nil {
 					return err
 				}
-				var ip net.IP
-				var iface *net.Interface
-				for _, attr := range attrs {
-					switch attr.Attr.Type {
-					case syscall.RTA_DST:
-						ip = attr.Value
-					case syscall.RTA_OIF:
-						index := int(native.Uint32(attr.Value[0:4]))
-						iface, _ = net.InterfaceByIndex(index)
-					}
-				}
-				if iface.Name == ifaceName && ip.Equal(dest) {
+				iface, _ := net.InterfaceByIndex(route.LinkIndex)
+				if iface.Name == ifaceName && route.Dst.IP.Equal(dest) {
 					return nil
 				}
 			}
