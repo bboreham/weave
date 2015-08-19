@@ -3,10 +3,8 @@ package net
 import (
 	"fmt"
 	"net"
-	"syscall"
 
 	"github.com/vishvananda/netlink"
-	"github.com/vishvananda/netlink/nl"
 )
 
 // A network is considered free if it does not overlap any existing
@@ -64,26 +62,4 @@ func CheckRouteExists(ifaceName string, dest net.IP) bool {
 		return nil
 	})
 	return found
-}
-
-func waitForRoute(s *nl.NetlinkSocket, ifaceName string, dest net.IP) error {
-	for {
-		msgs, err := s.Receive()
-		if err != nil {
-			return err
-		}
-		for _, m := range msgs {
-			switch m.Header.Type {
-			case syscall.RTM_NEWROUTE:
-				route, err := netlink.DeserializeRoute(m.Data)
-				if err != nil {
-					return err
-				}
-				iface, _ := net.InterfaceByIndex(route.LinkIndex)
-				if iface.Name == ifaceName && route.Dst.IP.Equal(dest) {
-					return nil
-				}
-			}
-		}
-	}
 }
