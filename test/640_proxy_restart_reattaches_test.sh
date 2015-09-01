@@ -9,6 +9,7 @@ check_attached() {
     assert_dns_record $HOST1 c1 $NAME $C2
 }
 
+N=50
 start_suite "Proxy restart reattaches networking to containers"
 
 weave_on $HOST1 launch
@@ -35,5 +36,11 @@ run_on $HOST1 sh -c "command -v systemctl >/dev/null && sudo systemctl restart d
 sleep 1
 weave_on $HOST1 launch
 check_attached
+
+# Create and remove a lot of containers; the failure mode is that this
+# takes a long time as it has to wait for the old ones to time out.
+for i in $(seq $N); do
+    proxy docker_on $HOST1 run -e WEAVE_CIDR=net:10.32.4.0/28 --rm -t $SMALL_IMAGE /bin/true
+done
 
 end_suite
