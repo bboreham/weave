@@ -231,6 +231,9 @@ func (alloc *Allocator) ContainerDied(ident string) {
 			alloc.debugln("Container", ident, "died; noting to remove later")
 			alloc.dead[ident] = alloc.now()
 		}
+		// Also remove any pending ops
+		alloc.cancelOpsFor(&alloc.pendingAllocates, ident)
+		alloc.cancelOpsFor(&alloc.pendingClaims, ident)
 	}
 }
 
@@ -274,10 +277,6 @@ func (alloc *Allocator) delete(ident string) error {
 		alloc.space.Free(addr)
 	}
 	delete(alloc.owned, ident)
-
-	// Also remove any pending ops
-	found = alloc.cancelOpsFor(&alloc.pendingAllocates, ident) || found
-	found = alloc.cancelOpsFor(&alloc.pendingClaims, ident) || found
 
 	if !found {
 		return fmt.Errorf("Delete: no addresses for %s", ident)
