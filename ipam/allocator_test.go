@@ -71,7 +71,7 @@ func TestAllocFree(t *testing.T) {
 	alloc.ContainerDied(container2)
 
 	// Resurrect
-	addr1c, err := alloc.Allocate(container2, cidr1.HostRange(), nil)
+	addr1c, err := alloc.Allocate(container2, cidr1.HostRange(), returnFalse)
 	require.NoError(t, err)
 	require.Equal(t, addr1b, addr1c, "address")
 
