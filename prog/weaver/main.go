@@ -141,6 +141,7 @@ func main() {
 		trustedSubnetStr   string
 		dbPrefix           string
 		isAWSVPC           bool
+		kubePeers          bool
 
 		defaultDockerHost = "unix:///var/run/docker.sock"
 	)
@@ -181,6 +182,7 @@ func main() {
 	mflag.StringVar(&trustedSubnetStr, []string{"-trusted-subnets"}, "", "comma-separated list of trusted subnets in CIDR notation")
 	mflag.StringVar(&dbPrefix, []string{"-db-prefix"}, "/weavedb/weave", "pathname/prefix of filename to store data")
 	mflag.BoolVar(&isAWSVPC, []string{"-awsvpc"}, false, "use AWS VPC for routing")
+	mflag.BoolVar(&kubePeers, []string{"-kube-peers"}, false, "Query the Kubernetes api-server for peers")
 
 	// crude way of detecting that we probably have been started in a
 	// container, with `weave launch` --> suppress misleading paths in
@@ -247,7 +249,11 @@ func main() {
 	router := weave.NewNetworkRouter(config, networkConfig, name, nickName, overlay, db)
 	Log.Println("Our name is", router.Ourself)
 
-	if peers, err = router.InitialPeers(resume, peers); err != nil {
+	if kubePeers {
+		if peers, err = getKubePeers(); err != nil {
+			Log.Fatal("Unable to get peer list from Kubernetes: ", err)
+		}
+	} else if peers, err = router.InitialPeers(resume, peers); err != nil {
 		Log.Fatal("Unable to get initial peer set: ", err)
 	}
 
