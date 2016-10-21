@@ -128,7 +128,7 @@ $(BUILD_UPTODATE): build/*
 	$(SUDO) docker build -t $(BUILD_IMAGE) build/
 	touch $@
 
-$(WEAVER_UPTODATE): prog/weaver/Dockerfile $(WEAVER_EXE)
+$(WEAVER_UPTODATE): prog/weaver/Dockerfile $(WEAVER_EXE) $(WEAVEEXEC_UPTODATE)
 	$(SUDO) DOCKER_HOST=$(DOCKER_HOST) docker build -t $(WEAVER_IMAGE) prog/weaver
 	touch $@
 
@@ -144,7 +144,7 @@ $(WEAVEEXEC_UPTODATE): prog/weaveexec/Dockerfile prog/weaveexec/symlink $(DOCKER
 	$(SUDO) DOCKER_HOST=$(DOCKER_HOST) docker build -t $(WEAVEEXEC_IMAGE) prog/weaveexec
 	touch $@
 
-$(PLUGIN_UPTODATE): prog/plugin/Dockerfile $(PLUGIN_EXE) $(WEAVEEXEC_UPTODATE)
+$(PLUGIN_UPTODATE): prog/plugin/Dockerfile $(PLUGIN_EXE) $(WEAVER_UPTODATE)
 	$(SUDO) docker build -t $(PLUGIN_IMAGE) prog/plugin
 	touch $@
 

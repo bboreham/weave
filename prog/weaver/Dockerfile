@@ -1,4 +1,4 @@
-FROM scratch
+FROM weaveworks/weaveexec
 MAINTAINER Weaveworks Inc <help@weave.works>
 LABEL works.weave.role=system
 WORKDIR /home/weave
