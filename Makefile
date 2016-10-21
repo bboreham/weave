@@ -1,4 +1,4 @@
-PUBLISH=publish_weave publish_weaveexec publish_plugin publish_weave_kube
+PUBLISH=publish_weave publish_weaveexec publish_plugin publish_weave-kube
 
 .DEFAULT: all
 .PHONY: all exes testrunner update tests lint publish $(PUBLISH) clean clean-bin prerequisites build run-smoketests
