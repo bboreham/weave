@@ -58,6 +58,7 @@ prog/weaveexec/weavewait_noop
 prog/weaveexec/weavewait_nomcast
 prog/weaveexec/sigproxy
 prog/weaveexec/weaveutil
+prog/weaveexec/kube-peers
 prog/weaveexec/docker*.tgz
 Vagrantfile.local
 test/tls/tls
