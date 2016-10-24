@@ -229,9 +229,17 @@ publish() {
             --name "$RELEASE_NAME latest ($VERSION)" \
             --description "[Release Notes](https://github.com/$GITHUB_USER/weave/releases/$LATEST_TAG)"
 
+        sed -i -e s/:latest/:$VERSION/ -e "/imagePullPolicy: Always/d" ./prog/weave-kube/weave-daemonset.yaml
         github-release upload \
             --user $GITHUB_USER \
             --repo weave \
+            --tag latest_release \
+            --name "weave" \
+            --file "./prog/weave-kube/weave-daemonset.yaml"
+
+        github-release upload \
+            --user $GITHUB_USER \
+            --repo weave-kube \
             --tag latest_release \
             --name "weave" \
             --file "./weave"
