@@ -196,9 +196,6 @@ ifeq ($(BUILD_IN_CONTAINER),true)
 # This make target compiles all binaries inside of the weaveworks/build container
 # It bind-mounts the source into the container and passes all important variables
 exes $(EXES) tests lint: $(BUILD_UPTODATE)
-	git submodule update --init
-# Containernetworking has another copy of vishvananda/netlink which leads to duplicate definitions
-	-@rm -r vendor/github.com/containernetworking/cni/vendor
 	@mkdir -p $(shell pwd)/.pkg
 	$(SUDO) docker run $(RM) $(RUN_FLAGS) \
 	    -v $(shell pwd):/go/src/github.com/weaveworks/weave \
@@ -321,9 +318,6 @@ $(NETWORKTESTER_UPTODATE): test/images/network-tester/Dockerfile $(NETWORKTESTER
 
 $(WEAVE_EXPORT): $(IMAGES_UPTODATE) $(WEAVEDB_UPTODATE)
 	$(SUDO) DOCKER_HOST=$(DOCKER_HOST) docker save $(addsuffix :latest,$(IMAGES)) | gzip > $@
-
-tools/.git $(MANIFEST_TOOL_DIR)/.git:
-	git submodule update --init
 
 # CODE FOR PUBLISHING THE IMAGES
 
