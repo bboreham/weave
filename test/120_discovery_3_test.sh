@@ -18,6 +18,8 @@ launch_all
 start_container $HOST1 $C1/24 --name=c1
 start_container $HOST3 $C3/24 --name=c3
 
+sleep 5
+
 assert_raises "exec_on $HOST1 c1 $PING $C3"
 stop_weave_on $HOST2
 assert_raises "exec_on $HOST1 c1 $PING $C3"
