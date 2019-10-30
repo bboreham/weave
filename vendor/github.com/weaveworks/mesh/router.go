@@ -261,6 +261,7 @@ func (router *Router) Gossip() GossipData {
 // It returns an "improved" version of the received update.
 // See peers.ApplyUpdate.
 func (router *Router) OnGossip(update []byte) (GossipData, error) {
+	router.logger.Printf("OnGossip")
 	_, newUpdate, err := router.applyTopologyUpdate(update)
 	if err != nil || len(newUpdate) == 0 {
 		return nil, err

@@ -3,6 +3,7 @@ package mesh
 import (
 	"bytes"
 	"encoding/gob"
+	"fmt"
 	"io"
 	"math/rand"
 	"sync"
@@ -373,6 +374,7 @@ func (peers *Peers) applyUpdate(update []byte) (peerNameSet, peerNameSet, error)
 	defer peers.unlockAndNotify(&pending)
 
 	newPeers, decodedUpdate, decodedConns, err := peers.decodeUpdate(update)
+	peers.ourself.router.logger.Printf("applyUpdate %v", err)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -543,6 +545,7 @@ func (peers *Peers) applyDecodedUpdate(decodedUpdate []*Peer, decodedConns [][]c
 			newUpdate[name] = struct{}{}
 		}
 	}
+	fmt.Printf("%v: applied update %#v conns %#v newUpdate %#v\n", ts(), decodedUpdate, decodedConns, newUpdate)
 	return newUpdate
 }
 

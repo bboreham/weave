@@ -1,7 +1,9 @@
 package mesh
 
 import (
+	"fmt"
 	"math"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -157,6 +159,7 @@ func (r *routes) randomNeighbours(except PeerName) []PeerName {
 	for dst := range destinations {
 		res = append(res, dst)
 	}
+	r.ourself.router.logger.Printf("randomNeighbours (except %s) from %#v return %#v", except, r.unicastAll, res)
 	return res
 }
 
@@ -213,6 +216,14 @@ func (r *routes) run(wait <-chan chan struct{}, action <-chan func()) {
 	}
 }
 
+func stackTrace(all bool) string {
+	buf := make([]byte, 1<<20)
+	stacklen := runtime.Stack(buf, all)
+	return string(buf[:stacklen])
+}
+
+func ts() string { return time.Now().Format(time.StampMilli) }
+
 // Calculate unicast and broadcast routes from r.ourself, and reset
 // the broadcast route cache.
 func (r *routes) calculate() {
@@ -230,6 +241,8 @@ func (r *routes) calculate() {
 	r.peers.RUnlock()
 
 	r.Lock()
+	fmt.Printf("%v: peers: %#v\n", ts(), makePeerStatusSlice(r.peers))
+	fmt.Printf("%v: setting routes\n%#v\n", ts(), unicast)
 	r.unicast = unicast
 	r.unicastAll = unicastAll
 	r.broadcast = broadcast

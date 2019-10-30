@@ -261,6 +261,7 @@ func (peer *localPeer) handleDeleteConnection(conn ourConnection) {
 // helpers
 
 func (peer *localPeer) broadcastPeerUpdate(peers ...*Peer) {
+	peer.router.logger.Printf("requested broadcastPeerUpdate %#v\n%s\n", peers, stackTrace(false))
 	// Some tests run without a router.  This should be fixed so
 	// that the relevant part of Router can be easily run in the
 	// context of a test, but that will involve significant

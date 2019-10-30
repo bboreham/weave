@@ -86,6 +86,7 @@ func (c *gossipChannel) GossipBroadcast(update GossipData) {
 // GossipNeighbourSubset implements Gossip, relaying update to subset of members of the
 // channel.
 func (c *gossipChannel) GossipNeighbourSubset(update GossipData) {
+	c.logger.Printf("GossipNeighbourSubset %#v\n", update)
 	c.relay(c.ourself.Name, update)
 }
 
@@ -120,6 +121,7 @@ func (c *gossipChannel) relayBroadcast(srcName PeerName, update GossipData) {
 func (c *gossipChannel) relay(srcName PeerName, data GossipData) {
 	c.routes.ensureRecalculated()
 	for _, conn := range c.ourself.ConnectionsTo(c.routes.randomNeighbours(srcName)) {
+		conn.(ourConnection).logf("%s gossip relay", c.name)
 		c.senderFor(conn).Send(data)
 	}
 }

@@ -186,7 +186,7 @@ func (router *NetworkRouter) relay(key ForwardPacketKey) FlowOp {
 	if !found {
 		// Not necessarily an error as there could be a race with the
 		// dst disappearing whilst the frame is in flight
-		log.Println("Received packet for unknown destination:", key.DstPeer)
+		log.Println("Received packet:", key.PacketKey, "but no route to:", key.DstPeer)
 		return DiscardingFlowOp{}
 	}
 

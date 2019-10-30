@@ -99,8 +99,12 @@ func startLocalConnection(connRemote *remoteConnection, tcpConn *net.TCPConn, ro
 	go conn.run(errorChan, finished, acceptNewPeer)
 }
 
+func (conn *LocalConnection) String() string {
+	return "->[" + conn.remoteTCPAddr + "|" + conn.remote.String() + "]"
+}
+
 func (conn *LocalConnection) logf(format string, args ...interface{}) {
-	format = "->[" + conn.remoteTCPAddr + "|" + conn.remote.String() + "]: " + format
+	format = conn.String() + ": " + format
 	conn.logger.Printf(format, args...)
 }
 

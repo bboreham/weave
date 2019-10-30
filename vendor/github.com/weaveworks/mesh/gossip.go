@@ -1,6 +1,7 @@
 package mesh
 
 import "sync"
+import "fmt"
 
 // Gossip is the sending interface.
 //
@@ -106,6 +107,9 @@ func (s *gossipSender) run(stop <-chan struct{}, more <-chan struct{}, flush <-c
 			return
 		case <-more:
 			sentSomething, err := s.deliver(stop)
+			s.Lock()
+			fmt.Printf("%s: deliver sent %t, err %v now %#v\n", s.sender, sentSomething, err, s)
+			s.Unlock()
 			if err != nil {
 				return
 			}
@@ -178,11 +182,14 @@ func (s *gossipSender) Send(data GossipData) {
 	s.Lock()
 	defer s.Unlock()
 	if s.empty() {
+		fmt.Printf("gossipSender prod\n")
 		defer s.prod()
 	}
 	if s.gossip == nil {
 		s.gossip = data
+		fmt.Printf("%v gossipSender set %v\n", s, data)
 	} else {
+		fmt.Printf("%v gossipSender merge %v\n", s, data)
 		s.gossip = s.gossip.Merge(data)
 	}
 }
